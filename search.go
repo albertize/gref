@@ -22,9 +22,9 @@ func performSearch(rootPath string, pattern *regexp.Regexp) ([]SearchResult, err
 
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Log the error but continue walking
-			// fmt.Printf("Errore durante l'accesso al percorso %s: %v\n", path, err)
-			return nil // Don't stop the walk for individual errors
+			// Error accessing path; log if needed, but continue walking
+			// fmt.Printf("Error accessing path %s: %v\n", path, err)
+			return nil // Continue walking even if one file fails
 		}
 		if d.IsDir() {
 			return nil // Skip directories
@@ -32,7 +32,7 @@ func performSearch(rootPath string, pattern *regexp.Regexp) ([]SearchResult, err
 
 		file, err := os.Open(path)
 		if err != nil {
-			// Skip files that cannot be opened (e.g., permissions)
+			// Could not open file (e.g., permissions); skip
 			return nil
 		}
 		defer file.Close()
@@ -43,7 +43,7 @@ func performSearch(rootPath string, pattern *regexp.Regexp) ([]SearchResult, err
 			lineNum++
 			line := scanner.Text()
 			if pattern.MatchString(line) {
-				// Find the matched string to store it
+				// Store the matched string for reporting
 				match := pattern.FindString(line)
 
 				results = append(results, SearchResult{
@@ -55,7 +55,8 @@ func performSearch(rootPath string, pattern *regexp.Regexp) ([]SearchResult, err
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			// fmt.Printf("Errore nella lettura del file %s: %v\n", path, err)
+			// Error reading file; log if needed
+			// fmt.Printf("Error reading file %s: %v\n", path, err)
 		}
 		return nil
 	})

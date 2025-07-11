@@ -23,7 +23,7 @@ func main() {
 		replacementStr = os.Args[3]
 	}
 
-	// Compila il pattern regex
+	// Compile the regex pattern
 	pattern, err := regexp.Compile(patternStr)
 	if err != nil {
 		clearScreenANSI()
@@ -31,7 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Esegui la ricerca iniziale
+	// Perform the initial search
 	results, err := performSearch(rootPath, pattern)
 	if err != nil {
 		clearScreenANSI()
@@ -45,10 +45,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Inizializza il modello Bubble Tea
-	p := tea.NewProgram(initialModel(results, patternStr, replacementStr))
+	// Initialize the Bubble Tea model in AltScreen (dedicated buffer)
+	p := tea.NewProgram(initialModel(results, patternStr, replacementStr), tea.WithAltScreen())
 
-	// Avvia il programma Bubble Tea
+	// Start the Bubble Tea program
 	if _, err := p.Run(); err != nil {
 		clearScreenANSI()
 		fmt.Printf("Error running the program: %v\n", err)

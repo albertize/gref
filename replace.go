@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// performReplacements executes the actual file modifications
+// performReplacements modifies files by applying replacements to selected results
 func performReplacements(allResults []SearchResult, selected map[int]struct{}, patternStr, replacementStr string) error {
-	// Group results by file path to avoid reading/writing the same file multiple times
+	// Group results by file path to minimize file reads and writes
 	filesToProcess := make(map[string][]SearchResult)
 	for i, res := range allResults {
 		if _, ok := selected[i]; ok {
@@ -17,7 +17,7 @@ func performReplacements(allResults []SearchResult, selected map[int]struct{}, p
 		}
 	}
 
-	// Compile the pattern once for replacement
+	// Compile the regex pattern once for efficient replacement
 	pattern, err := regexp.Compile(patternStr)
 	if err != nil {
 		return fmt.Errorf("error recompiling pattern for replacement: %w", err)
@@ -32,45 +32,44 @@ func performReplacements(allResults []SearchResult, selected map[int]struct{}, p
 	return nil
 }
 
-// replaceInFile reads a file, performs replacements, and writes it back
+// replaceInFile reads a file, applies replacements to selected lines, and writes the result
 func replaceInFile(filePath string, resultsInFile []SearchResult, pattern *regexp.Regexp, replacementStr string) error {
-	// Read the entire file content
+	// Read the full file content into memory
 	contentBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("unable to read file: %w", err)
 	}
 	content := string(contentBytes)
 
-	// Split content into lines
+	// Split the file content into individual lines
 	lines := strings.Split(content, "\n")
 
-	// Create a map for quick lookup of lines to be replaced
+	// Build a map for fast lookup of which lines need replacement
 	linesToReplace := make(map[int]struct{})
 	for _, res := range resultsInFile {
-		// Use line number - 1 because slice indices are 0-based
+		// Convert line numbers to zero-based indices for slices
 		linesToReplace[res.LineNum-1] = struct{}{}
 	}
 
-	// Iterate through lines and replace only those that were selected
-	// Note: This approach replaces ALL occurrences of the pattern on the selected lines.
-	// If the requirement was to replace only the *specific* matched instance,
-	// the logic would be significantly more complex (e.g., tracking character offsets).
-	// Given "minimal", replacing all on a selected line is a reasonable compromise.
+	// For each line, replace only if it was selected
+	// Note: This replaces ALL occurrences of the pattern on selected lines.
+	// To replace only specific matches, more complex logic (e.g., tracking offsets) would be needed.
+	// For simplicity, replacing all matches on a selected line is a practical approach.
 	for i := range lines {
 		if _, ok := linesToReplace[i]; ok {
 			lines[i] = pattern.ReplaceAllString(lines[i], replacementStr)
 		}
 	}
 
-	// Join lines back and write to a temporary file
+	// Join the lines and write the result to a temporary file
 	newContent := strings.Join(lines, "\n")
 	tempFile := filePath + ".tmp"
-	err = os.WriteFile(tempFile, []byte(newContent), 0644) // Use original permissions
+	err = os.WriteFile(tempFile, []byte(newContent), 0644) // Use default permissions
 	if err != nil {
 		return fmt.Errorf("unable to write temporary file: %w", err)
 	}
 
-	// Replace the original file with the temporary one
+	// Atomically replace the original file with the new file
 	err = os.Rename(tempFile, filePath)
 	if err != nil {
 		return fmt.Errorf("unable to rename temporary file: %w", err)

@@ -9,12 +9,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ANSI escape codes for coloring output
+// ANSI escape codes for coloring terminal output
 const (
-	ColorRed   = lipgloss.Color("9")   // Bright Red
-	ColorGreen = lipgloss.Color("10")  // Bright Green
-	ColorCyan  = lipgloss.Color("6")   // Cyan
-	ColorGrey  = lipgloss.Color("240") // Dark Grey
+	ColorRed   = lipgloss.Color("9")   // Bright red for highlights
+	ColorGreen = lipgloss.Color("10")  // Bright green for replacements
+	ColorCyan  = lipgloss.Color("6")   // Cyan for selection
+	ColorGrey  = lipgloss.Color("240") // Dark grey for help and less important text
 )
 
 var (
@@ -25,30 +25,30 @@ var (
 	errorStyle     = lipgloss.NewStyle().Foreground(ColorRed).Bold(true)
 )
 
-// AppState defines the different states of our application
+// AppState represents the different UI states of the application
 type AppState int
 
 const (
-	StateBrowse     AppState = iota // Browse search results
-	StateConfirming                 // Confirming replacement
-	StateReplacing                  // Replacing in progress (briefly)
-	StateDone                       // All replacements done or user quit
+	StateBrowse     AppState = iota // User is browsing search results
+	StateConfirming                 // User is confirming replacements
+	StateReplacing                  // Replacements are being performed
+	StateDone                       // All replacements are done or user quit
 )
 
-// model represents the state of our terminal UI
+// model holds the state of the terminal UI
 type model struct {
-	results        []SearchResult   // All found results
-	cursor         int              // Which result is currently selected (index in m.results)
-	topline        int              // Index of the first result visible on screen
-	screenHeight   int              // Height of the terminal screen, used for displaying results
-	selected       map[int]struct{} // Which results are marked for replacement
-	patternStr     string           // The original search pattern string
+	results        []SearchResult   // All search results found
+	cursor         int              // Index of the currently selected result
+	topline        int              // Index of the first visible result on screen
+	screenHeight   int              // Height of the terminal screen for displaying results
+	selected       map[int]struct{} // Indices of results marked for replacement
+	patternStr     string           // The search pattern string
 	replacementStr string           // The replacement string
-	state          AppState         // Current state of the application
+	state          AppState         // Current UI state
 	err            error            // Any error that occurred
 }
 
-// initialModel creates a new model with initial state
+// initialModel returns a new model with the initial state
 func initialModel(results []SearchResult, pattern, replacement string) model {
 	return model{
 		results:        results,
@@ -263,14 +263,12 @@ func (m model) View() string {
 	return s.String()
 }
 
-// CORREZIONE: Le definizioni dei messaggi erano state omesse
 // Custom messages for async operations
 type replacementDoneMsg struct{}
 type errMsg struct{ error }
 
-// clearScreenANSI pulisce la console usando i codici ANSI, spesso più veloci.
-// Funziona meglio su terminali che supportano ANSI escape codes (quasi tutti i moderni).
+// clearScreenANSI clears the console using ANSI codes, which is fast and works on most modern terminals.
 func clearScreenANSI() {
-	// Codice ANSI per pulire lo schermo e spostare il cursore in alto a sinistra (0;0)
+	// ANSI code to clear the screen and move the cursor to the top left (0;0)
 	fmt.Print("\033[H\033[2J")
 }
