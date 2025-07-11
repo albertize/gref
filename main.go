@@ -10,9 +10,8 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Println("Utilizzo: go run . <directory> <pattern> [sostituzione]")
-		fmt.Println("Esempio: go run . . \"vecchio_testo\" \"nuovo_testo\"")
-		fmt.Println("         (Usa '.' per la directory corrente)")
+		fmt.Println("Example: go run . <directory> <pattern> [replacement]")
+		fmt.Println("         (Use '.' for the current folder)")
 		os.Exit(1)
 	}
 	clearScreenANSI()
@@ -28,7 +27,7 @@ func main() {
 	pattern, err := regexp.Compile(patternStr)
 	if err != nil {
 		clearScreenANSI()
-		fmt.Printf("Errore nella compilazione del pattern regex: %v\n", err)
+		fmt.Printf("Error compiling regex pattern: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -36,13 +35,13 @@ func main() {
 	results, err := performSearch(rootPath, pattern)
 	if err != nil {
 		clearScreenANSI()
-		fmt.Printf("Errore durante la ricerca: %v\n", err)
+		fmt.Printf("Error during search: %v\n", err)
 		os.Exit(1)
 	}
 
 	if len(results) == 0 {
 		clearScreenANSI()
-		fmt.Println("Nessun risultato trovato per il pattern:", patternStr)
+		fmt.Println("No results found for the pattern:", patternStr)
 		os.Exit(0)
 	}
 
@@ -52,7 +51,7 @@ func main() {
 	// Avvia il programma Bubble Tea
 	if _, err := p.Run(); err != nil {
 		clearScreenANSI()
-		fmt.Printf("Errore nell'esecuzione del programma: %v\n", err)
+		fmt.Printf("Error running the program: %v\n", err)
 		os.Exit(1)
 	}
 }

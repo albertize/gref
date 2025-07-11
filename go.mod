@@ -1,4 +1,4 @@
-module grft
+module gref
 
 go 1.24.5
 

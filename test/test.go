@@ -25,7 +25,7 @@ func fetchData(endpoint string) (string, error) {
 
 	resp, err := client.Get(API_URL + endpoint)
 	if err != nil {
-		return "", fmt.Errorf("errore durante la richiesta: %w", err)
+		return "", fmt.Errorf("Error during request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -39,11 +39,11 @@ func fetchData(endpoint string) (string, error) {
 
 func main() {
 	fmt.Println("Avvio dell'applicazione di test.")
-	
+
 	// Esempio di utilizzo:
 	data, err := fetchData("users/123")
 	if err != nil {
-		log.Fatalf("Errore: %v", err)
+		log.Fatalf("Error: %v", err)
 	}
 	fmt.Printf("Dati ricevuti: %s\n", data)
 
@@ -238,13 +238,3 @@ E anche API_URL e DEFAULT_TIMEOUT.
 //API_URL
 //API_URL
 //API_URL
-
-
-
-
-
-
-
-
-
-

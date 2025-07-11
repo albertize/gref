@@ -20,13 +20,13 @@ func performReplacements(allResults []SearchResult, selected map[int]struct{}, p
 	// Compile the pattern once for replacement
 	pattern, err := regexp.Compile(patternStr)
 	if err != nil {
-		return fmt.Errorf("errore nella ricompilazione del pattern per la sostituzione: %w", err)
+		return fmt.Errorf("error recompiling pattern for replacement: %w", err)
 	}
 
 	for filePath, resultsInFile := range filesToProcess {
 		err := replaceInFile(filePath, resultsInFile, pattern, replacementStr)
 		if err != nil {
-			return fmt.Errorf("errore durante la sostituzione nel file %s: %w", filePath, err)
+			return fmt.Errorf("error during replacement in file %s: %w", filePath, err)
 		}
 	}
 	return nil
@@ -37,7 +37,7 @@ func replaceInFile(filePath string, resultsInFile []SearchResult, pattern *regex
 	// Read the entire file content
 	contentBytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("impossibile leggere il file: %w", err)
+		return fmt.Errorf("unable to read file: %w", err)
 	}
 	content := string(contentBytes)
 
@@ -67,13 +67,13 @@ func replaceInFile(filePath string, resultsInFile []SearchResult, pattern *regex
 	tempFile := filePath + ".tmp"
 	err = os.WriteFile(tempFile, []byte(newContent), 0644) // Use original permissions
 	if err != nil {
-		return fmt.Errorf("impossibile scrivere il file temporaneo: %w", err)
+		return fmt.Errorf("unable to write temporary file: %w", err)
 	}
 
 	// Replace the original file with the temporary one
 	err = os.Rename(tempFile, filePath)
 	if err != nil {
-		return fmt.Errorf("impossibile rinominare il file temporaneo: %w", err)
+		return fmt.Errorf("unable to rename temporary file: %w", err)
 	}
 
 	return nil

@@ -124,7 +124,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.state {
 			case StateBrowse:
 				if len(m.selected) == 0 {
-					m.err = fmt.Errorf("nessun risultato selezionato per la sostituzione")
+					m.err = fmt.Errorf("no results")
 					return m, nil
 				}
 				m.state = StateConfirming
@@ -179,18 +179,18 @@ func (m model) View() string {
 	s := strings.Builder{}
 
 	if m.err != nil {
-		s.WriteString(errorStyle.Render(fmt.Sprintf("Errore: %v\n", m.err)))
-		s.WriteString("\nPremi 'q' per uscire.\n")
+		s.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v\n", m.err)))
+		s.WriteString("\nPress 'q' to exit.\n")
 		return s.String()
 	}
 
 	switch m.state {
 	case StateBrowse:
-		s.WriteString("--- Risultati della Ricerca (Pattern: ")
+		s.WriteString("--- Search results (Pattern: ")
 		s.WriteString(highlightStyle.Render(m.patternStr))
 		s.WriteString(") ---\n")
 		if m.replacementStr != "" {
-			s.WriteString("Sostituzione con: ")
+			s.WriteString("Replacing with: ")
 			s.WriteString(replaceStyle.Render(m.replacementStr))
 			s.WriteString("\n")
 		}
@@ -244,20 +244,20 @@ func (m model) View() string {
 
 			s.WriteString("\n")
 		}
-		s.WriteString(helpStyle.Render(fmt.Sprintf("\nPosizione %d/%d", m.cursor+1, len(m.results))))
-		s.WriteString(helpStyle.Render("\nFreccette/j/k: naviga | Spazio: seleziona/deseleziona | a: seleziona tutti | n: deseleziona tutti"))
-		s.WriteString(helpStyle.Render("\nInvio: conferma sostituzione | q/Ctrl+c: esci"))
+		s.WriteString(helpStyle.Render(fmt.Sprintf("\nLine %d/%d", m.cursor+1, len(m.results))))
+		s.WriteString(helpStyle.Render("\nRows/j/k: move | Space: select/deselect | a: select all | n: deselect all"))
+		s.WriteString(helpStyle.Render("\nEnter: confirm selected | q/Ctrl+c: exit"))
 
 	case StateConfirming:
-		s.WriteString(fmt.Sprintf("Sei sicuro di voler sostituire %d occorrenze?\n", len(m.selected)))
-		s.WriteString(fmt.Sprintf("Pattern: %s -> Sostituzione: %s\n\n", highlightStyle.Render(m.patternStr), replaceStyle.Render(m.replacementStr)))
-		s.WriteString(helpStyle.Render("Invio: conferma | Esc: annulla"))
+		s.WriteString(fmt.Sprintf("Replacing %d?\n", len(m.selected)))
+		s.WriteString(fmt.Sprintf("Pattern: %s -> Replace: %s\n\n", highlightStyle.Render(m.patternStr), replaceStyle.Render(m.replacementStr)))
+		s.WriteString(helpStyle.Render("Enter: confirm | Esc: exit"))
 
 	case StateReplacing:
-		s.WriteString("Sostituzione in corso... attendere.\n")
+		s.WriteString("Replacing... whait.\n")
 
 	case StateDone:
-		s.WriteString("Operazione completata. Premi 'q' per uscire.\n")
+		s.WriteString("Success.\n")
 	}
 
 	return s.String()
