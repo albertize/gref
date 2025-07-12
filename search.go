@@ -24,18 +24,22 @@ type SearchResult struct {
 func searchLinesOptimized(path string, content []byte, pattern *regexp.Regexp) []SearchResult {
 	var results []SearchResult
 
-	// Process as bytes first, convert to string only when needed
-	lines := bytes.Split(content, []byte("\n"))
+	// Using scanner in case of \r\n "windows style"
+	scanner := bufio.NewScanner(bytes.NewReader(content))
 
-	for lineNum, line := range lines {
-		lineStr := string(line) // Convert only when checking
-		if pattern.MatchString(lineStr) {
-			match := pattern.FindString(lineStr)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+
+		lineBytes := scanner.Bytes()
+
+		if pattern.Match(lineBytes) {
+			matchBytes := pattern.Find(lineBytes)
 			results = append(results, SearchResult{
 				FilePath:  path,
-				LineNum:   lineNum + 1,
-				LineText:  lineStr,
-				MatchText: match,
+				LineNum:   lineNum,
+				LineText:  scanner.Text(),
+				MatchText: string(matchBytes),
 			})
 		}
 	}
