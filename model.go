@@ -242,39 +242,82 @@ func (m model) View() string {
 
 	if m.state == StateBrowse {
 		re := regexp.MustCompile(regexp.QuoteMeta(m.patternStr))
-		endLine := min(m.topline+m.screenHeight, len(m.results))
-		for i := m.topline; i < endLine; i++ {
-			res := m.results[i]
-			cursorStr := "  "
-			if m.cursor == i {
-				cursorStr = lipgloss.NewStyle().Bold(true).Render("> ")
+		linesShown := 0
+		// Build a mapping from visible line index to result index
+		visibleLines := make([]struct {
+			isHeader bool
+			file     string
+			idx      int
+		}, 0, len(m.results)*2)
+		for i, res := range m.results {
+			displayPath := res.FilePath
+			if i == 0 || displayPath != m.results[i-1].FilePath {
+				visibleLines = append(visibleLines, struct {
+					isHeader bool
+					file     string
+					idx      int
+				}{true, displayPath, -1})
 			}
-			checkedStr := "[ ]"
-			if _, ok := m.selected[i]; ok {
-				checkedStr = selectedStyle.Render("[x]")
+			visibleLines = append(visibleLines, struct {
+				isHeader bool
+				file     string
+				idx      int
+			}{false, displayPath, i})
+		}
+		// Ensure cursor is always visible
+		cursorLine := 0
+		for i := 0; i < len(visibleLines); i++ {
+			if !visibleLines[i].isHeader && visibleLines[i].idx == m.cursor {
+				cursorLine = i
+				break
 			}
-			s.WriteString(fmt.Sprintf("%s%s %s:%d: ", cursorStr, checkedStr, res.FilePath, res.LineNum))
-			line := res.LineText
-			baseLineTextStyle := lipgloss.NewStyle()
-			visibleLine := line
-			if m.horizontalOffset < len(line) {
-				visibleLine = line[m.horizontalOffset:]
+		}
+		// Adjust topline if cursor is out of view
+		if cursorLine < m.topline {
+			m.topline = cursorLine
+		}
+		if cursorLine >= m.topline+m.screenHeight {
+			m.topline = cursorLine - m.screenHeight + 1
+		}
+		// Render only visible lines
+		for i := m.topline; i < len(visibleLines) && linesShown < m.screenHeight; i++ {
+			v := visibleLines[i]
+			if v.isHeader {
+				s.WriteString(fmt.Sprintf("/ %s\n", v.file))
 			} else {
-				visibleLine = ""
-			}
-			lastIndex := 0
-			matches := re.FindAllStringIndex(visibleLine, -1)
-			for _, match := range matches {
-				s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:match[0]]))
-				if _, ok := m.selected[i]; ok {
-					s.WriteString(selectedStyle.Render(m.replacementStr))
-				} else {
-					s.WriteString(highlightStyle.Render(visibleLine[match[0]:match[1]]))
+				res := m.results[v.idx]
+				cursorStr := "  "
+				if m.cursor == v.idx {
+					cursorStr = lipgloss.NewStyle().Bold(true).Render("> ")
 				}
-				lastIndex = match[1]
+				checkedStr := "[ ]"
+				if _, ok := m.selected[v.idx]; ok {
+					checkedStr = selectedStyle.Render("[x]")
+				}
+				line := res.LineText
+				baseLineTextStyle := lipgloss.NewStyle()
+				visibleLine := line
+				if m.horizontalOffset < len(line) {
+					visibleLine = line[m.horizontalOffset:]
+				} else {
+					visibleLine = ""
+				}
+				lastIndex := 0
+				matches := re.FindAllStringIndex(visibleLine, -1)
+				s.WriteString(fmt.Sprintf("%s%s %d: ", cursorStr, checkedStr, res.LineNum))
+				for _, match := range matches {
+					s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:match[0]]))
+					if _, ok := m.selected[v.idx]; ok {
+						s.WriteString(selectedStyle.Render(m.replacementStr))
+					} else {
+						s.WriteString(highlightStyle.Render(visibleLine[match[0]:match[1]]))
+					}
+					lastIndex = match[1]
+				}
+				s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:]))
+				s.WriteString("\n")
 			}
-			s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:]))
-			s.WriteString("\n")
+			linesShown++
 		}
 	}
 	s.WriteString(m.footerView())

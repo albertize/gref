@@ -74,14 +74,14 @@ func searchLargeFileOptimized(path string, pattern *regexp.Regexp) []SearchResul
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		results = append(results, SearchResult{
-			FilePath:  path,
-			LineNum:   -1,
-			LineText:  "[error reading file: " + err.Error() + "]",
-			MatchText: "",
-		})
-	}
+	// if err := scanner.Err(); err != nil {
+	// 	// results = append(results, SearchResult{
+	// 	// 	FilePath:  path,
+	// 	// 	LineNum:   -1,
+	// 	// 	LineText:  "[error reading file: " + err.Error() + "]",
+	// 	// 	MatchText: "",
+	// 	// })
+	// }
 
 	return results
 }
