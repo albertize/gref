@@ -74,7 +74,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
-			clearScreenANSI()
 			return m, tea.Quit
 
 		case "up", "k":
@@ -149,10 +148,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		// When the window resizes, update the screen height for pagination
-		m.screenHeight = msg.Height - 10 // Adjust for header and footer
-		if m.screenHeight < 1 {
-			m.screenHeight = 1
-		}
+
+		// Adjust for header and footer
+		m.screenHeight = max(msg.Height-10, 1)
+
 		// Adjust topline if necessary to keep cursor on screen
 		if m.cursor < m.topline {
 			m.topline = m.cursor
@@ -199,10 +198,7 @@ func (m model) View() string {
 		re := regexp.MustCompile(regexp.QuoteMeta(m.patternStr))
 
 		// Calculate the end index for the visible results
-		endLine := m.topline + m.screenHeight
-		if endLine > len(m.results) {
-			endLine = len(m.results)
-		}
+		endLine := min(m.topline+m.screenHeight, len(m.results))
 
 		// Iterate only over the visible results
 		for i := m.topline; i < endLine; i++ {
@@ -223,21 +219,17 @@ func (m model) View() string {
 			line := res.LineText
 
 			baseLineTextStyle := lipgloss.NewStyle()
-			if _, ok := m.selected[i]; ok {
-				baseLineTextStyle = selectedStyle
-			}
-
-			matchHighlightStyle := highlightStyle
-			if _, ok := m.selected[i]; ok {
-				matchHighlightStyle = lipgloss.NewStyle().Foreground(ColorRed).Underline(true).Bold(true)
-			}
 
 			lastIndex := 0
 			matches := re.FindAllStringIndex(line, -1)
 
 			for _, match := range matches {
 				s.WriteString(baseLineTextStyle.Render(line[lastIndex:match[0]]))
-				s.WriteString(matchHighlightStyle.Render(line[match[0]:match[1]]))
+				if _, ok := m.selected[i]; ok {
+					s.WriteString(selectedStyle.Render(m.replacementStr))
+				} else {
+					s.WriteString(highlightStyle.Render(line[match[0]:match[1]]))
+				}
 				lastIndex = match[1]
 			}
 			s.WriteString(baseLineTextStyle.Render(line[lastIndex:]))
@@ -266,9 +258,3 @@ func (m model) View() string {
 // Custom messages for async operations
 type replacementDoneMsg struct{}
 type errMsg struct{ error }
-
-// clearScreenANSI clears the console using ANSI codes, which is fast and works on most modern terminals.
-func clearScreenANSI() {
-	// ANSI code to clear the screen and move the cursor to the top left (0;0)
-	fmt.Print("\033[H\033[2J")
-}

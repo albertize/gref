@@ -14,7 +14,6 @@ func main() {
 		fmt.Println("         (Use '.' for the current folder)")
 		os.Exit(1)
 	}
-	clearScreenANSI()
 
 	rootPath := os.Args[1]
 	patternStr := os.Args[2]
@@ -26,7 +25,6 @@ func main() {
 	// Compile the regex pattern
 	pattern, err := regexp.Compile(patternStr)
 	if err != nil {
-		clearScreenANSI()
 		fmt.Printf("Error compiling regex pattern: %v\n", err)
 		os.Exit(1)
 	}
@@ -34,13 +32,11 @@ func main() {
 	// Perform the initial search
 	results, err := performSearch(rootPath, pattern)
 	if err != nil {
-		clearScreenANSI()
 		fmt.Printf("Error during search: %v\n", err)
 		os.Exit(1)
 	}
 
 	if len(results) == 0 {
-		clearScreenANSI()
 		fmt.Println("No results found for the pattern:", patternStr)
 		os.Exit(0)
 	}
@@ -50,7 +46,6 @@ func main() {
 
 	// Start the Bubble Tea program
 	if _, err := p.Run(); err != nil {
-		clearScreenANSI()
 		fmt.Printf("Error running the program: %v\n", err)
 		os.Exit(1)
 	}
