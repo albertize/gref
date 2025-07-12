@@ -51,6 +51,7 @@ type model struct {
 	screenHeight     int              // Height of the terminal screen for displaying results
 	screenWidth      int              // Width of the terminal screen for displaying results
 	selected         map[int]struct{} // Indices of results marked for replacement
+	pattern          *regexp.Regexp   // The search pattern string
 	patternStr       string           // The search pattern string
 	replacementStr   string           // The replacement string
 	mode             AppMode          // The current Application mode
@@ -60,7 +61,7 @@ type model struct {
 }
 
 // initialModel returns a new model with the initial state
-func initialModel(results []SearchResult, pattern, replacement string, mode AppMode) model {
+func initialModel(results []SearchResult, patternStr, replacement string, pattern *regexp.Regexp, mode AppMode) model {
 	return model{
 		results:          results,
 		cursor:           0,
@@ -68,7 +69,8 @@ func initialModel(results []SearchResult, pattern, replacement string, mode AppM
 		screenHeight:     20, // Default screen height, should be updated on tea.WindowSizeMsg
 		screenWidth:      20, // Default screen width, should be updated on tea.WindowSizeMsg
 		selected:         make(map[int]struct{}),
-		patternStr:       pattern,
+		pattern:          pattern,
+		patternStr:       patternStr,
 		replacementStr:   replacement,
 		mode:             mode,
 		state:            StateBrowse,
@@ -190,7 +192,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateReplacing
 				// Perform replacement in a goroutine to not block the UI
 				return m, func() tea.Msg {
-					err := performReplacements(m.results, m.selected, m.patternStr, m.replacementStr)
+					err := performReplacements(m.results, m.selected, m.pattern, m.replacementStr)
 					if err != nil {
 						return errMsg{err}
 					}

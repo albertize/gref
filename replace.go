@@ -8,19 +8,13 @@ import (
 )
 
 // performReplacements modifies files by applying replacements to selected results
-func performReplacements(allResults []SearchResult, selected map[int]struct{}, patternStr, replacementStr string) error {
+func performReplacements(allResults []SearchResult, selected map[int]struct{}, pattern *regexp.Regexp, replacementStr string) error {
 	// Group results by file path to minimize file reads and writes
 	filesToProcess := make(map[string][]SearchResult)
 	for i, res := range allResults {
 		if _, ok := selected[i]; ok {
 			filesToProcess[res.FilePath] = append(filesToProcess[res.FilePath], res)
 		}
-	}
-
-	// Compile the regex pattern once for efficient replacement
-	pattern, err := regexp.Compile(patternStr)
-	if err != nil {
-		return fmt.Errorf("error recompiling pattern for replacement: %w", err)
 	}
 
 	for filePath, resultsInFile := range filesToProcess {

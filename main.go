@@ -99,7 +99,7 @@ Examples:
 	}
 
 	// Initialize the Bubble Tea model in AltScreen (dedicated buffer)
-	p := tea.NewProgram(initialModel(results, patternStr, replacementStr, mode), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(results, patternStr, replacementStr, pattern, mode), tea.WithAltScreen())
 
 	// Start the Bubble Tea program
 	if _, err := p.Run(); err != nil {
