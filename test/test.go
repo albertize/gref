@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-// Versione corrente del servizio: 2.0.0
-// Questa è una riga di commento per test.
+// Current service version: 2.0.0
+// This is a comment line for testing.
 const API_URL = "https://api.example.com/v1/"
-const DEFAULT_TIMEOUT = 5000 // Timeout in millisecondi
+const DEFAULT_TIMEOUT = 5000 // Timeout in milliseconds
 
 func init() {
-	fmt.Println("Inizializzazione del modulo...")
-	// Logga la versione all'avvio
-	log.Printf("Servizio avviato. Versione: %s\n", "2.0.0")
+	fmt.Println("Module initialization...")
+	// Log the version at startup
+	log.Printf("Service started. Version: %s\n", "2.0.0")
 }
 
 func fetchData(endpoint string) (string, error) {
@@ -34,29 +34,29 @@ func fetchData(endpoint string) (string, error) {
 	}
 
 	// Simuliamo la lettura del corpo
-	return "Dati fittizi dal server v1", nil
+	return "Dummy data from server v1", nil
 }
 
 func main() {
-	fmt.Println("Avvio dell'applicazione di test.")
+	fmt.Println("Starting test application.")
 
-	// Esempio di utilizzo:
+	// Example usage:
 	data, err := fetchData("users/123")
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
-	fmt.Printf("Dati ricevuti: %s\n", data)
+	fmt.Printf("Received data: %s\n", data)
 
-	// Un altro test sulla versione 2.0.0
-	// Test finale v2.0.0 per verifica
+	// Another test for version 2.0.0
+	// Final test v2.0.0 for verification
 	const MAX_RETRIES = 3
-	fmt.Println("Fine dell'applicazione.")
+	fmt.Println("End of application.")
 }
 
 /*
-Questo è un blocco di commento multilinea.
-Contiene la versione 2.0.0 più volte.
-E anche API_URL e DEFAULT_TIMEOUT.
+This is a multiline comment block.
+It contains the version 2.0.0 multiple times.
+And also API_URL and DEFAULT_TIMEOUT.
 */
 
 //API_URL
