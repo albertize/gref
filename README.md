@@ -1,26 +1,41 @@
-# GREF (Global Replace and Find)
+# GREF
 
-gref is a terminal-based search and replace tool for text files, featuring an interactive TUI (Text User Interface) built with Bubble Tea and Lipgloss. It allows users to search for patterns, preview results, select lines for replacement, and perform replacements across files with robust controls and clear feedback.
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.20%2B-blue)](https://golang.org/)
+
+A fast, interactive search and replace tool for your terminal, powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
+
+---
 
 ## Features
 
-- **Search and Replace**: Search for regex patterns in files and optionally replace them with a given string.
-- **Interactive UI**: Browse results, select/deselect lines, confirm replacements, and view status/errors in a modern terminal interface.
-- **Horizontal and Vertical Scrolling**: Navigate long lines and large result sets with keyboard controls.
-- **Bulk Selection**: Select/deselect all results for replacement.
-- **Preview**: See highlighted matches and replacement previews before confirming changes.
-- **Robust Error Handling**: Handles file access errors, invalid patterns, and displays clear error messages.
-- **Modes**: Supports search-only and search-and-replace modes.
+- 🚀 **Fast regex search** across files and directories
+- 🖥️ **Interactive TUI** for previewing and selecting replacements
+- 🧠 **Smart selection**: choose lines to replace, bulk select/deselect
+- 🛡️ **Atomic file writes** for safe replacements
+- 🎨 **Customizable styles** and clear error messages
+- 🏃 **Efficient for large codebases**
+
+---
+
+## Install
+
+```sh
+go install github.com/albertize/gref@latest
+```
+
+---
 
 ## Usage
 
-```
-gref <pattern> [replacement] [directory]
+```sh
+gref [options] <pattern> [replacement] [directory]
 ```
 
 ### Options
 
 - `-h`, `--help` : Show help message and exit
+- `-i`, `--ignore-case` : Ignore case in pattern matching
 
 ### Arguments
 
@@ -28,11 +43,16 @@ gref <pattern> [replacement] [directory]
 - `[replacement]`: Replacement string (if omitted, only search)
 - `[directory]`: Directory to search (default: current directory)
 
-### Examples
+### Example
 
-- `gref foo bar src`      Replace 'foo' with 'bar' in src directory
-- `gref foo`              Search for 'foo' only
-- `gref --help`           Show help message
+```sh
+gref foo bar src      # Replace 'foo' with 'bar' in src directory
+gref foo              # Search for 'foo' only
+gref -i Foo           # Case-insensitive search for 'Foo'
+gref --help           # Show help message
+```
+
+---
 
 ## Keyboard Controls
 
@@ -46,32 +66,42 @@ gref <pattern> [replacement] [directory]
 - `Esc`: Cancel confirmation
 - `q`/`Ctrl+c`: Exit
 
-## Implementation Details
+---
 
-### Main Components
+## Project Structure
 
-- **main.go**: Entry point, argument parsing, help message, and Bubble Tea program initialization.
-- **model.go**: TUI state management, event handling, rendering logic, and UI controls.
-- **search.go**: File system traversal and regex search, returning results with file, line, and match info.
-- **replace.go**: Performs replacements in selected files/lines, writes changes atomically.
-- **test/test.go**: Example/test file for API calls and constants, with translated comments and dummy data.
+- **main.go**: CLI entry, argument parsing, help, and UI launch
+- **model.go**: TUI state, rendering, and event handling
+- **search.go**: Efficient regex search across files
+- **replace.go**: Safe, grouped replacements in files
+- **test/test.go**: Example/test code for HTTP and logging
 
-### Data Structures
+---
 
-- `SearchResult`: Holds file path, line number, line text, and matched text for each result.
-- `model`: Maintains UI state, results, selection, cursor, scrolling, error info, and adapts to terminal width (`screenWidth`).
+## Performance
 
-### Error Handling
+GREF is designed for speed and efficiency:
 
-- All file operations and regex compilation are wrapped with error checks and clear messages.
+- **Optimized Search**: Buffered reading and byte-level processing for large files
+- **Parallel File Traversal**: Uses Go concurrency for fast directory scanning
+- **Atomic Replacements**: Writes changes to temp files before replacing originals
+- **Minimal UI Overhead**: Responsive TUI adapts to terminal size
+- **Selective Processing**: Only selected lines/files are modified
 
-### Customization
+---
 
-- Colors and styles are defined for highlights, replacements, selections, and help text.
+## Related Projects
+
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea): TUI framework
+- [Lipgloss](https://github.com/charmbracelet/lipgloss): Terminal style toolkit
+
+---
 
 ## Contributing
 
 Contributions are welcome! Please submit issues or pull requests for bug fixes, features, or improvements.
+
+---
 
 ## License
 
