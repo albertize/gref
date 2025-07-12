@@ -45,30 +45,34 @@ const (
 
 // model holds the state of the terminal UI
 type model struct {
-	results        []SearchResult   // All search results found
-	cursor         int              // Index of the currently selected result
-	topline        int              // Index of the first visible result on screen
-	screenHeight   int              // Height of the terminal screen for displaying results
-	selected       map[int]struct{} // Indices of results marked for replacement
-	patternStr     string           // The search pattern string
-	replacementStr string           // The replacement string
-	mode           AppMode          // The current Application mode
-	state          AppState         // Current UI state
-	err            error            // Any error that occurred
+	results          []SearchResult   // All search results found
+	cursor           int              // Index of the currently selected result
+	topline          int              // Index of the first visible result on screen
+	screenHeight     int              // Height of the terminal screen for displaying results
+	screenWidth      int              // Width of the terminal screen for displaying results
+	selected         map[int]struct{} // Indices of results marked for replacement
+	patternStr       string           // The search pattern string
+	replacementStr   string           // The replacement string
+	mode             AppMode          // The current Application mode
+	state            AppState         // Current UI state
+	err              error            // Any error that occurred
+	horizontalOffset int              // Horizontal scroll offset for long lines
 }
 
 // initialModel returns a new model with the initial state
 func initialModel(results []SearchResult, pattern, replacement string, mode AppMode) model {
 	return model{
-		results:        results,
-		cursor:         0,
-		topline:        0,
-		screenHeight:   20, // Default screen height, should be updated on tea.WindowSizeMsg
-		selected:       make(map[int]struct{}),
-		patternStr:     pattern,
-		replacementStr: replacement,
-		mode:           mode,
-		state:          StateBrowse,
+		results:          results,
+		cursor:           0,
+		topline:          0,
+		screenHeight:     20, // Default screen height, should be updated on tea.WindowSizeMsg
+		screenWidth:      20, // Default screen width, should be updated on tea.WindowSizeMsg
+		selected:         make(map[int]struct{}),
+		patternStr:       pattern,
+		replacementStr:   replacement,
+		mode:             mode,
+		state:            StateBrowse,
+		horizontalOffset: 0,
 	}
 }
 
@@ -90,7 +94,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateBrowse {
 				if m.cursor > 0 {
 					m.cursor--
-					// If the cursor moves above the current topline, adjust topline
 					if m.cursor < m.topline {
 						m.topline = m.cursor
 					}
@@ -101,11 +104,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == StateBrowse {
 				if m.cursor < len(m.results)-1 {
 					m.cursor++
-					// If the cursor moves below the current visible window, adjust topline
 					if m.cursor >= m.topline+m.screenHeight {
 						m.topline = m.cursor - m.screenHeight + 1
 					}
 				}
+			}
+
+		case "left", "h":
+			if m.state == StateBrowse && m.horizontalOffset > 0 {
+				m.horizontalOffset -= 10
+				if m.horizontalOffset < 0 {
+					m.horizontalOffset = 0
+				}
+			}
+
+		case "right", "l":
+			if m.state == StateBrowse {
+				// Calculate available width for line text (excluding decorations)
+				// Decorations: cursorStr (2), checkedStr (4), filePath, colon, lineNum, spaces, etc.
+				// We'll estimate decorations as: len(filePath) + len(":") + len(lineNum) + 6
+				availableWidth := m.screenWidth - 20 // 20 is a safe estimate for decorations
+				if availableWidth < 1 {
+					availableWidth = 1
+				}
+				maxOffset := 0
+				endLine := min(m.topline+m.screenHeight, len(m.results))
+				for i := m.topline; i < endLine; i++ {
+					lineLen := len(m.results[i].LineText)
+					offset := lineLen - availableWidth
+					if offset > maxOffset {
+						maxOffset = offset
+					}
+				}
+				if maxOffset < 0 {
+					maxOffset = 0
+				}
+				m.horizontalOffset += 5
+				if m.horizontalOffset > maxOffset {
+					m.horizontalOffset = maxOffset
+				}
+			}
+
+		case "home":
+			if m.state == StateBrowse {
+				m.horizontalOffset = 0
+			}
+
+		case "end":
+			if m.state == StateBrowse {
+				m.horizontalOffset = 1000 // Arbitrary large value to scroll to end
 			}
 
 		case " ": // Space to select/deselect an item
@@ -161,6 +208,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		// When the window resizes, update the screen height for pagination
 
+		m.screenWidth = max(msg.Width, 1)
 		// Adjust for header and footer
 		m.screenHeight = max(msg.Height-10, 1)
 
@@ -232,29 +280,30 @@ func (m model) View() string {
 			s.WriteString(fmt.Sprintf("%s%s %s:%d: ", cursorStr, checkedStr, res.FilePath, res.LineNum))
 
 			line := res.LineText
-
 			baseLineTextStyle := lipgloss.NewStyle()
-
+			// Apply horizontal offset
+			visibleLine := line
+			if m.horizontalOffset < len(line) {
+				visibleLine = line[m.horizontalOffset:]
+			} else {
+				visibleLine = ""
+			}
 			lastIndex := 0
-			matches := re.FindAllStringIndex(line, -1)
-
+			matches := re.FindAllStringIndex(visibleLine, -1)
 			for _, match := range matches {
-				s.WriteString(baseLineTextStyle.Render(line[lastIndex:match[0]]))
+				s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:match[0]]))
 				if _, ok := m.selected[i]; ok {
 					s.WriteString(selectedStyle.Render(m.replacementStr))
 				} else {
-					s.WriteString(highlightStyle.Render(line[match[0]:match[1]]))
+					s.WriteString(highlightStyle.Render(visibleLine[match[0]:match[1]]))
 				}
 				lastIndex = match[1]
 			}
-			s.WriteString(baseLineTextStyle.Render(line[lastIndex:]))
-
+			s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:]))
 			s.WriteString("\n")
 		}
 		s.WriteString(helpStyle.Render(fmt.Sprintf("\nLine %d/%d", m.cursor+1, len(m.results))))
-		s.WriteString(helpStyle.Render("\nRows/j/k: move | Space: select/deselect | a: select all | n: deselect all"))
-		s.WriteString(helpStyle.Render("\nEnter: confirm selected | q/Ctrl+c: exit"))
-
+		s.WriteString(helpStyle.Render("\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line \nSpace: select/deselect | a: select all | n: deselect all"))
 	case StateConfirming:
 		s.WriteString(fmt.Sprintf("Replacing %d?\n", len(m.selected)))
 		s.WriteString(fmt.Sprintf("Pattern: %s -> Replace: %s\n\n", highlightStyle.Render(m.patternStr), replaceStyle.Render(m.replacementStr)))
