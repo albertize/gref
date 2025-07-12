@@ -283,7 +283,7 @@ func (m model) View() string {
 		for i := m.topline; i < len(visibleLines) && linesShown < m.screenHeight; i++ {
 			v := visibleLines[i]
 			if v.isHeader {
-				s.WriteString(fmt.Sprintf("/ %s\n", v.file))
+				s.WriteString(fmt.Sprintf("DIR: %s\n", v.file))
 			} else {
 				res := m.results[v.idx]
 				cursorStr := "  "
