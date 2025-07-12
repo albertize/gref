@@ -9,17 +9,48 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Example: go run . <directory> <pattern> [replacement]")
-		fmt.Println("         (Use '.' for the current folder)")
-		os.Exit(1)
+	helpText := `gref - search and replace tool
+
+Usage:
+  gref <pattern> [replacement] [directory]
+
+Options:
+  -h, --help        Show this help message and exit
+
+Arguments:
+  <pattern>         Regex pattern to search for
+  [replacement]     Replacement string (if omitted, only search)
+  [directory]       Directory to search (default: current directory)
+
+Examples:
+  gref foo bar src      Replace 'foo' with 'bar' in src directory
+  gref foo              Search for 'foo' only
+  gref --help           Show this help message
+  `
+
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: gref <pattern> [replacement] [directory]")
+		fmt.Println("Try 'gref --help, -h' for more information.")
+		os.Exit(0)
 	}
 
-	rootPath := os.Args[1]
-	patternStr := os.Args[2]
+	if os.Args[1] == "--help" || os.Args[1] == "-h" {
+		fmt.Print(helpText)
+		os.Exit(0)
+	}
+
+	patternStr := os.Args[1]
 	replacementStr := ""
+	rootPath := "."
+	mode := Default
+	if len(os.Args) > 2 {
+		replacementStr = os.Args[2]
+	} else {
+		mode = SearchOnly
+	}
+
 	if len(os.Args) > 3 {
-		replacementStr = os.Args[3]
+		rootPath = os.Args[3]
 	}
 
 	// Compile the regex pattern
@@ -42,7 +73,7 @@ func main() {
 	}
 
 	// Initialize the Bubble Tea model in AltScreen (dedicated buffer)
-	p := tea.NewProgram(initialModel(results, patternStr, replacementStr), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(results, patternStr, replacementStr, mode), tea.WithAltScreen())
 
 	// Start the Bubble Tea program
 	if _, err := p.Run(); err != nil {

@@ -35,6 +35,14 @@ const (
 	StateDone                       // All replacements are done or user quit
 )
 
+// AppMode represents the different modes the application provides
+type AppMode int
+
+const (
+	Default AppMode = iota
+	SearchOnly
+)
+
 // model holds the state of the terminal UI
 type model struct {
 	results        []SearchResult   // All search results found
@@ -44,12 +52,13 @@ type model struct {
 	selected       map[int]struct{} // Indices of results marked for replacement
 	patternStr     string           // The search pattern string
 	replacementStr string           // The replacement string
+	mode           AppMode          // The current Application mode
 	state          AppState         // Current UI state
 	err            error            // Any error that occurred
 }
 
 // initialModel returns a new model with the initial state
-func initialModel(results []SearchResult, pattern, replacement string) model {
+func initialModel(results []SearchResult, pattern, replacement string, mode AppMode) model {
 	return model{
 		results:        results,
 		cursor:         0,
@@ -58,6 +67,7 @@ func initialModel(results []SearchResult, pattern, replacement string) model {
 		selected:       make(map[int]struct{}),
 		patternStr:     pattern,
 		replacementStr: replacement,
+		mode:           mode,
 		state:          StateBrowse,
 	}
 }
@@ -99,7 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case " ": // Space to select/deselect an item
-			if m.state == StateBrowse {
+			if m.state == StateBrowse && m.mode != SearchOnly {
 				if _, ok := m.selected[m.cursor]; ok {
 					delete(m.selected, m.cursor)
 				} else {
@@ -108,25 +118,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "a": // Select all
-			if m.state == StateBrowse {
+			if m.state == StateBrowse && m.mode != SearchOnly {
 				for i := range m.results {
 					m.selected[i] = struct{}{}
 				}
 			}
 
 		case "n": // Deselect all
-			if m.state == StateBrowse {
+			if m.state == StateBrowse && m.mode != SearchOnly {
 				m.selected = make(map[int]struct{})
 			}
 
 		case "enter":
 			switch m.state {
 			case StateBrowse:
-				if len(m.selected) == 0 {
-					m.err = fmt.Errorf("no results")
-					return m, nil
+				if m.mode != SearchOnly {
+					if len(m.selected) == 0 {
+						m.err = fmt.Errorf("no results")
+						return m, nil
+					}
+					m.state = StateConfirming
 				}
-				m.state = StateConfirming
 			case StateConfirming:
 				m.state = StateReplacing
 				// Perform replacement in a goroutine to not block the UI
@@ -188,7 +200,10 @@ func (m model) View() string {
 		s.WriteString("--- Search results (Pattern: ")
 		s.WriteString(highlightStyle.Render(m.patternStr))
 		s.WriteString(") ---\n")
-		if m.replacementStr != "" {
+		switch m.mode {
+		case SearchOnly:
+			s.WriteString("Search Only Mode\n")
+		default:
 			s.WriteString("Replacing with: ")
 			s.WriteString(replaceStyle.Render(m.replacementStr))
 			s.WriteString("\n")
