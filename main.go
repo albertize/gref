@@ -61,7 +61,7 @@ Examples:
 	}
 
 	// Perform the initial search
-	results, err := performSearch(rootPath, pattern)
+	results, err := performSearchAdaptive(rootPath, pattern)
 	if err != nil {
 		fmt.Printf("Error during search: %v\n", err)
 		os.Exit(1)
