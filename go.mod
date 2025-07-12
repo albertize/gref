@@ -1,6 +1,6 @@
-module gref
+module github.com/albertize/gref
 
-go 1.24.5
+go 1.23.0
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.6

@@ -1,7 +1,7 @@
 # GREF
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.20%2B-blue)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.23%2B-blue)](https://golang.org/)
 
 A fast, interactive search and replace tool for your terminal, powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
 
