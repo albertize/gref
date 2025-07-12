@@ -6,7 +6,7 @@
 A fast, interactive search and replace tool for your terminal, powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
 
 ---
-[![GREF Demo](/media/GREF-Demo.mp4)]
+![GREF Demo](/media/GREF-Demo.gif)
 
 ## Features
 
