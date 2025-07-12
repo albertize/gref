@@ -1,2 +1,2 @@
 default:
-	@ go build -ldflags="-s -w" . && mv gref /home/alberto/go/bin
+	@ go build -ldflags="-s -w" . && mv gref $(HOME)/go/bin
