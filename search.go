@@ -74,6 +74,15 @@ func searchLargeFileOptimized(path string, pattern *regexp.Regexp) []SearchResul
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		results = append(results, SearchResult{
+			FilePath:  path,
+			LineNum:   -1,
+			LineText:  "[error reading file: " + err.Error() + "]",
+			MatchText: "",
+		})
+	}
+
 	return results
 }
 
@@ -202,22 +211,6 @@ func performSearchAdaptive(rootPath string, pattern *regexp.Regexp) ([]SearchRes
 	fileCh := make(chan string, 32)
 	resultCh := make(chan []SearchResult, 32)
 
-	// Collect all file paths first
-	var filePaths []string
-	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if !isLikelyTextFile(path) {
-			return nil
-		}
-		filePaths = append(filePaths, path)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	// Autotune worker count based on OS and CPU
 	cpuCount := runtime.NumCPU()
 	osType := runtime.GOOS
@@ -231,6 +224,7 @@ func performSearchAdaptive(rootPath string, pattern *regexp.Regexp) ([]SearchRes
 		numWorkers = 1
 	}
 
+	// Start workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -255,11 +249,21 @@ func performSearchAdaptive(rootPath string, pattern *regexp.Regexp) ([]SearchRes
 		}()
 	}
 
+	// WalkDir and send file paths directly to fileCh
+	walkErrCh := make(chan error, 1)
 	go func() {
-		for _, path := range filePaths {
+		err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if !isLikelyTextFile(path) {
+				return nil
+			}
 			fileCh <- path
-		}
+			return nil
+		})
 		close(fileCh)
+		walkErrCh <- err
 	}()
 
 	go func() {
@@ -271,6 +275,11 @@ func performSearchAdaptive(rootPath string, pattern *regexp.Regexp) ([]SearchRes
 		mu.Lock()
 		results = append(results, fileResults...)
 		mu.Unlock()
+	}
+
+	err := <-walkErrCh
+	if err != nil {
+		return nil, err
 	}
 
 	return results, nil
