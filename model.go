@@ -236,52 +236,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the UI.
 func (m model) View() string {
 	s := strings.Builder{}
+	s.WriteString(m.headerView())
 
-	if m.err != nil {
-		s.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v\n", m.err)))
-		s.WriteString("\nPress 'q' to exit.\n")
-		return s.String()
-	}
-
-	switch m.state {
-	case StateBrowse:
-		s.WriteString("--- Search results (Pattern: ")
-		s.WriteString(highlightStyle.Render(m.patternStr))
-		s.WriteString(") ---\n")
-		switch m.mode {
-		case SearchOnly:
-			s.WriteString("Search Only Mode\n")
-		default:
-			s.WriteString("Replacing with: ")
-			s.WriteString(replaceStyle.Render(m.replacementStr))
-			s.WriteString("\n")
-		}
-		s.WriteString("\n")
-
+	if m.state == StateBrowse {
 		re := regexp.MustCompile(regexp.QuoteMeta(m.patternStr))
-
-		// Calculate the end index for the visible results
 		endLine := min(m.topline+m.screenHeight, len(m.results))
-
-		// Iterate only over the visible results
 		for i := m.topline; i < endLine; i++ {
-			res := m.results[i] // Get the result from the full results slice using its absolute index
-
+			res := m.results[i]
 			cursorStr := "  "
-			if m.cursor == i { // Check if the current absolute index is the cursor
+			if m.cursor == i {
 				cursorStr = lipgloss.NewStyle().Bold(true).Render("> ")
 			}
-
 			checkedStr := "[ ]"
 			if _, ok := m.selected[i]; ok {
 				checkedStr = selectedStyle.Render("[x]")
 			}
-
 			s.WriteString(fmt.Sprintf("%s%s %s:%d: ", cursorStr, checkedStr, res.FilePath, res.LineNum))
-
 			line := res.LineText
 			baseLineTextStyle := lipgloss.NewStyle()
-			// Apply horizontal offset
 			visibleLine := line
 			if m.horizontalOffset < len(line) {
 				visibleLine = line[m.horizontalOffset:]
@@ -302,23 +274,57 @@ func (m model) View() string {
 			s.WriteString(baseLineTextStyle.Render(visibleLine[lastIndex:]))
 			s.WriteString("\n")
 		}
-		s.WriteString(helpStyle.Render(fmt.Sprintf("\nLine %d/%d", m.cursor+1, len(m.results))))
-		s.WriteString(helpStyle.Render("\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line \nSpace: select/deselect | a: select all | n: deselect all"))
-	case StateConfirming:
-		s.WriteString(fmt.Sprintf("Replacing %d?\n", len(m.selected)))
-		s.WriteString(fmt.Sprintf("Pattern: %s -> Replace: %s\n\n", highlightStyle.Render(m.patternStr), replaceStyle.Render(m.replacementStr)))
-		s.WriteString(helpStyle.Render("Enter: confirm | Esc: exit"))
-
-	case StateReplacing:
-		s.WriteString("Replacing... whait.\n")
-
-	case StateDone:
-		s.WriteString("Success.\n")
 	}
-
+	s.WriteString(m.footerView())
 	return s.String()
 }
 
 // Custom messages for async operations
 type replacementDoneMsg struct{}
 type errMsg struct{ error }
+
+// headerView returns the header string used in the View
+func (m model) headerView() string {
+	s := strings.Builder{}
+	if m.err != nil {
+		s.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v\n", m.err)))
+		s.WriteString("\nPress 'q' to exit.\n")
+		return s.String()
+	}
+	switch m.state {
+	case StateBrowse:
+		s.WriteString("--- Search results (Pattern: ")
+		s.WriteString(highlightStyle.Render(m.patternStr))
+		s.WriteString(") ---\n")
+		switch m.mode {
+		case SearchOnly:
+			s.WriteString("Search Only Mode\n")
+		default:
+			s.WriteString("Replacing with: ")
+			s.WriteString(replaceStyle.Render(m.replacementStr))
+			s.WriteString("\n")
+		}
+		s.WriteString("\n")
+	case StateConfirming:
+		s.WriteString(fmt.Sprintf("Replacing %d?\n", len(m.selected)))
+		s.WriteString(fmt.Sprintf("Pattern: %s -> Replace: %s\n\n", highlightStyle.Render(m.patternStr), replaceStyle.Render(m.replacementStr)))
+	case StateReplacing:
+		s.WriteString("Replacing... whait.\n")
+	case StateDone:
+		s.WriteString("Success.\n")
+	}
+	return s.String()
+}
+
+// footerView returns the footer string used in the View
+func (m model) footerView() string {
+	s := strings.Builder{}
+	switch m.state {
+	case StateBrowse:
+		s.WriteString(helpStyle.Render(fmt.Sprintf("\nLine %d/%d", m.cursor+1, len(m.results))))
+		s.WriteString(helpStyle.Render("\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line \nSpace: select/deselect | a: select all | n: deselect all"))
+	case StateConfirming:
+		s.WriteString(helpStyle.Render("Enter: confirm | Esc: exit"))
+	}
+	return s.String()
+}
