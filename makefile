@@ -1,9 +1,6 @@
-.PHONY: build-all clean
+.PHONY: build-all clean zip-all
 
-# Output directory
 DIST_DIR := dist
-
-# Binary name
 BIN := gref
 
 build-all: clean
@@ -13,6 +10,15 @@ build-all: clean
 	GOOS=darwin GOARCH=amd64 go build -o $(DIST_DIR)/$(BIN)-darwin-amd64
 	@echo "Building for windows-amd64..."
 	GOOS=windows GOARCH=amd64 go build -o $(DIST_DIR)/$(BIN)-windows-amd64.exe
+	$(MAKE) zip-all
+
+zip-all:
+	@echo "Zipping linux-amd64..."
+	cd $(DIST_DIR) && zip $(BIN)-linux-amd64.zip $(BIN)-linux-amd64
+	@echo "Zipping darwin-amd64..."
+	cd $(DIST_DIR) && zip $(BIN)-darwin-amd64.zip $(BIN)-darwin-amd64
+	@echo "Zipping windows-amd64..."
+	cd $(DIST_DIR) && zip $(BIN)-windows-amd64.zip $(BIN)-windows-amd64.exe
 
 clean:
 	rm -rf $(DIST_DIR)
