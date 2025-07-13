@@ -225,6 +225,10 @@ func performSearchAdaptive(rootPath string, pattern *regexp.Regexp) ([]SearchRes
 		go func() {
 			defer wg.Done()
 			for path := range fileCh {
+				// Skip all .git folders
+				if strings.Contains(path, ".git") {
+					continue
+				}
 				info, err := os.Stat(path)
 				if err != nil {
 					continue
