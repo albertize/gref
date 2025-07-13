@@ -5,11 +5,11 @@ BIN := gref
 
 build-all: clean
 	@echo "Building for linux-amd64..."
-	GOOS=linux GOARCH=amd64 go build -o $(DIST_DIR)/$(BIN)-linux-amd64
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(DIST_DIR)/$(BIN)-linux-amd64
 	@echo "Building for darwin-amd64..."
-	GOOS=darwin GOARCH=amd64 go build -o $(DIST_DIR)/$(BIN)-darwin-amd64
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(DIST_DIR)/$(BIN)-darwin-amd64
 	@echo "Building for windows-amd64..."
-	GOOS=windows GOARCH=amd64 go build -o $(DIST_DIR)/$(BIN)-windows-amd64.exe
+	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(DIST_DIR)/$(BIN)-windows-amd64.exe
 	$(MAKE) zip-all
 
 zip-all:
