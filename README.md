@@ -21,9 +21,29 @@ A fast, interactive search and replace tool for your terminal, powered by [Bubbl
 
 ## Install
 
+
+### Go install (standard)
 ```sh
 go install github.com/albertize/gref@latest
 ```
+
+
+### Download pre-built binaries from GitHub Releases
+Go to [github.com/albertize/gref/releases](https://github.com/albertize/gref/releases) and download the package for your platform (Linux, macOS, Windows) from the "Assets" section.
+
+### Local build via makefile
+You can also build binaries locally:
+
+```sh
+make build-all
+```
+You will find the binaries in the `dist/` folder for Linux, macOS, and Windows.
+
+For a quick local build and install:
+```sh
+make build-local
+```
+The binary will be copied to `$HOME/go/bin`.
 
 ---
 
@@ -31,6 +51,28 @@ go install github.com/albertize/gref@latest
 
 ```sh
 gref [options] <pattern> [replacement] [directory]
+```
+
+### Options
+
+- `-h`, `--help` : Show help message and exit
+- `-i`, `--ignore-case` : Ignore case in pattern matching
+- `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
+
+### Arguments
+
+- `<pattern>`: Regex pattern to search for
+- `[replacement]`: Replacement string (if omitted, only search)
+- `[directory]`: Directory to search (default: current directory)
+
+### Example
+
+```sh
+gref foo bar src      # Replace 'foo' with 'bar' in src directory
+gref foo              # Search for 'foo' only
+gref -i Foo           # Case-insensitive search for 'Foo'
+gref --help           # Show help message
+gref -e .git,*.log    # Exclude .git folders and .log files
 ```
 
 ### Options
@@ -73,9 +115,10 @@ gref --help           # Show help message
 
 - **main.go**: CLI entry, argument parsing, help, and UI launch
 - **model.go**: TUI state, rendering, and event handling
-- **search.go**: Efficient regex search across files
+- **search.go**: Efficient regex search across files, exclusion logic
 - **replace.go**: Safe, grouped replacements in files
-- **test/test.go**: Example/test code for HTTP and logging
+- **test/replace_test.go**: Extensive edge case tests for replace (Windows/Unix line endings, empty files, binary/null bytes, permission errors, overlapping matches, invalid regex, etc.)
+- **test/search_test.go**: Tests for exclude logic and pattern parsing
 
 ---
 
