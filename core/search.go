@@ -193,12 +193,50 @@ func isLikelyTextFile(path string) bool {
 
 	// Skip known binary extensions
 	binaryExtensions := map[string]bool{
+		// Executables and libraries
 		".exe": true, ".dll": true, ".so": true, ".dylib": true,
-		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true,
-		".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
-		".zip": true, ".tar": true, ".gz": true, ".7z": true, ".rar": true,
-		".mp3": true, ".mp4": true, ".avi": true, ".mov": true, ".wav": true,
 		".bin": true, ".obj": true, ".lib": true, ".a": true,
+		".o": true, ".lo": true, ".la": true,
+
+		// Images
+		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true,
+		".ico": true, ".tiff": true, ".tif": true, ".webp": true, ".psd": true,
+		".raw": true, ".cr2": true, ".nef": true, ".svg": true,
+
+		// Documents
+		".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
+
+		// Archives
+		".zip": true, ".tar": true, ".gz": true, ".7z": true, ".rar": true,
+		".bz2": true, ".xz": true, ".lzma": true, ".cab": true, ".deb": true,
+		".rpm": true, ".dmg": true, ".iso": true,
+
+		// Audio/Video
+		".mp3": true, ".mp4": true, ".avi": true, ".mov": true, ".wav": true,
+		".mkv": true, ".wmv": true, ".flv": true, ".webm": true, ".m4v": true,
+		".m4a": true, ".flac": true, ".ogg": true, ".aac": true, ".wma": true,
+
+		// Development/Build artifacts
+		".pyc": true, ".pyo": true, ".class": true, ".jar": true, ".war": true,
+		".ear": true, ".dex": true, ".apk": true, ".ipa": true,
+		".cache": true, ".tmp": true, ".temp": true,
+
+		// Database files
+		".db": true, ".sqlite": true, ".sqlite3": true, ".mdb": true,
+		".accdb": true, ".dbf": true,
+
+		// Fonts
+		".ttf": true, ".otf": true, ".woff": true, ".woff2": true, ".eot": true,
+
+		// Certificates and keys
+		".p12": true, ".pfx": true, ".keystore": true, ".jks": true,
+		".crt": true, ".der": true,
+
+		// Proprietary formats
+		".sketch": true, ".fig": true, ".ai": true, ".eps": true, ".indd": true,
+
+		// System files
+		".sys": true, ".drv": true, ".reg": true, ".dat": true,
 	}
 
 	if binaryExtensions[ext] {
