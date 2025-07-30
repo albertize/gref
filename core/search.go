@@ -107,15 +107,15 @@ func searchLargeFileOptimized(path string, pattern *regexp.Regexp) []SearchResul
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
+		line := scanner.Bytes()
 
-		if pattern.MatchString(line) {
-			match := pattern.FindString(line)
+		if pattern.Match(line) {
+			match := pattern.Find(line)
 			results = append(results, SearchResult{
 				FilePath:  path,
 				LineNum:   lineNum,
-				LineText:  line,
-				MatchText: match,
+				LineText:  string(line),
+				MatchText: string(match),
 			})
 		}
 	}
