@@ -184,10 +184,9 @@ func isLikelyTextFile(path string) bool {
 		".css": true, ".xml": true, ".json": true, ".yaml": true, ".yml": true,
 		".md": true, ".rst": true, ".sql": true, ".sh": true, ".bat": true,
 		".ps1": true, ".log": true, ".conf": true, ".cfg": true, ".ini": true,
-		"": true, // Files without extension
 	}
 
-	if textExtensions[ext] {
+	if _, ok := textExtensions[ext]; ok {
 		return true
 	}
 
@@ -307,10 +306,6 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 				if IsExcluded(path, excludeList) {
 					continue
 				}
-				// Skip all .git folders
-				if strings.Contains(path, ".git") {
-					continue
-				}
 				info, err := os.Stat(path)
 				if err != nil {
 					continue
@@ -330,11 +325,17 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 		}()
 	}
 
-	// WalkDir and send file paths directly to fileCh
+	// WalkDir and send file paths directly to fileCh skipping .git and .cache folders by default
 	walkErrCh := make(chan error, 1)
 	go func() {
 		err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
+				return nil
+			}
+			if d.IsDir() && (d.Name() == ".git" || d.Name() == ".cache") {
+				return filepath.SkipDir
+			}
+			if d.IsDir() {
 				return nil
 			}
 			if IsExcluded(path, excludeList) {
