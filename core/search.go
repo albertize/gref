@@ -46,7 +46,8 @@ func IsExcluded(path string, excludeList []string) bool {
 			continue
 		}
 		// File exclusion (exact match or contains)
-		if strings.HasSuffix(path, pattern) || strings.Contains(path, pattern) {
+		fileName := filepath.Base(path)
+		if fileName == pattern {
 			return true
 		}
 	}
@@ -329,7 +330,7 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 	walkErrCh := make(chan error, 1)
 	go func() {
 		err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+			if err != nil {
 				return nil
 			}
 			if d.IsDir() && (d.Name() == ".git" || d.Name() == ".cache") {
