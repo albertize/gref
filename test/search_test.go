@@ -20,7 +20,7 @@ func TestIsExcluded(t *testing.T) {
 		path     string
 		expected bool
 	}{
-		{"/home/user/project/.git/config", true},
+		{"/home/user/project/.git", true},
 		{"/home/user/project/media/image.png", true},
 		{"/home/user/project/file.txt", true},
 		{"/home/user/project/notes.log", true},
