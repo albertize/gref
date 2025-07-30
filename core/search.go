@@ -183,8 +183,8 @@ func isLikelyTextFile(path string) bool {
 		".java": true, ".cpp": true, ".c": true, ".h": true, ".hpp": true,
 		".cs": true, ".php": true, ".rb": true, ".rs": true, ".html": true,
 		".css": true, ".xml": true, ".json": true, ".yaml": true, ".yml": true,
-		".md": true, ".rst": true, ".sql": true, ".sh": true, ".bat": true,
-		".ps1": true, ".log": true, ".conf": true, ".cfg": true, ".ini": true,
+		".md": true, ".rst": true, ".sh": true, ".bat": true,
+		".ps1": true, ".conf": true, ".cfg": true, ".ini": true,
 	}
 
 	if _, ok := textExtensions[ext]; ok {
