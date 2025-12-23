@@ -280,23 +280,18 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 	hasLiteral := len(literal) >= 3
 
 	var results []SearchResult
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	fileCh := make(chan string, 32)
-	resultCh := make(chan []SearchResult, 32)
 
-	// Autotune worker count based on OS and CPU
-	cpuCount := runtime.NumCPU()
-	osType := runtime.GOOS
-	var numWorkers int
-	if osType == "windows" {
-		numWorkers = min(cpuCount, 4) // Windows: limit to 4 due to file handle limits
-	} else {
-		numWorkers = min(cpuCount*2, 32) // Unix: up to 2x CPUs, max 32
-	}
+	fileCh := make(chan string, 100)
+	resultCh := make(chan []SearchResult, 100)
+
+	numWorkers := runtime.NumCPU()
+
+	// Safety check
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
+
+	var wg sync.WaitGroup
 
 	// Start workers
 	for i := 0; i < numWorkers; i++ {
@@ -304,14 +299,14 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 		go func() {
 			defer wg.Done()
 			for path := range fileCh {
-				if IsExcluded(path, excludeList) {
-					continue
-				}
+
 				info, err := os.Stat(path)
 				if err != nil {
 					continue
 				}
+
 				var fileResults []SearchResult
+
 				if info.Size() > 10*1024*1024 {
 					fileResults = searchLargeFileOptimized(path, pattern)
 				} else if hasLiteral {
@@ -319,6 +314,7 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 				} else {
 					fileResults = searchSmallFileOptimized(path, pattern)
 				}
+
 				if len(fileResults) > 0 {
 					resultCh <- fileResults
 				}
@@ -326,29 +322,33 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 		}()
 	}
 
-	// WalkDir and send file paths directly to fileCh skipping .git and .cache folders by default
+	// WalkDir routine
 	walkErrCh := make(chan error, 1)
 	go func() {
+		defer close(fileCh)
 		err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
-			if d.IsDir() && (d.Name() == ".git" || d.Name() == ".cache") {
-				return filepath.SkipDir
-			}
+
 			if d.IsDir() {
+				if d.Name() == ".git" || d.Name() == ".cache" || d.Name() == "node_modules" {
+					return filepath.SkipDir
+				}
 				return nil
 			}
+
 			if IsExcluded(path, excludeList) {
 				return nil
 			}
+
 			if !isLikelyTextFile(path) {
 				return nil
 			}
+
 			fileCh <- path
 			return nil
 		})
-		close(fileCh)
 		walkErrCh <- err
 	}()
 
@@ -358,13 +358,10 @@ func PerformSearchAdaptive(rootPath string, pattern *regexp.Regexp, excludeList 
 	}()
 
 	for fileResults := range resultCh {
-		mu.Lock()
 		results = append(results, fileResults...)
-		mu.Unlock()
 	}
 
-	err := <-walkErrCh
-	if err != nil {
+	if err := <-walkErrCh; err != nil {
 		return nil, err
 	}
 
