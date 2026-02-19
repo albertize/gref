@@ -192,7 +192,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = StateReplacing
 				// Perform replacement in a goroutine to not block the UI
 				return m, func() tea.Msg {
-					err := performReplacements(m.results, m.selected, m.pattern, m.replacementStr)
+					err := PerformReplacements(m.results, m.selected, m.pattern, m.replacementStr)
 					if err != nil {
 						return errMsg{err}
 					}
