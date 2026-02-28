@@ -176,6 +176,7 @@ mod platform {
 #[cfg(unix)]
 mod platform {
     use std::sync::Mutex;
+    use std::os::raw::c_ulong;
 
     static ORIG_TERMIOS: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
@@ -185,6 +186,7 @@ mod platform {
     // c_lflag offsets and bit masks
     #[cfg(target_os = "linux")]
     mod consts {
+        use std::os::raw::c_ulong;
         pub const LFLAG_OFFSET: usize = 12; // c_lflag is at byte 12 on Linux
         pub const IFLAG_OFFSET: usize = 0;
         pub const OFLAG_OFFSET: usize = 4;
@@ -200,11 +202,12 @@ mod platform {
         pub const INPCK: u32 = 0o20;
         pub const ISTRIP: u32 = 0o40;
         pub const OPOST: u32 = 0o1;
-        pub const TIOCGWINSZ: libc::c_ulong = 0x5413;
+        pub const TIOCGWINSZ: c_ulong = 0x5413;
     }
 
     #[cfg(target_os = "macos")]
     mod consts {
+        use std::os::raw::c_ulong;
         pub const LFLAG_OFFSET: usize = 12;
         pub const IFLAG_OFFSET: usize = 0;
         pub const OFLAG_OFFSET: usize = 4;
@@ -220,7 +223,7 @@ mod platform {
         pub const INPCK: u32 = 0x10;
         pub const ISTRIP: u32 = 0x20;
         pub const OPOST: u32 = 0x1;
-        pub const TIOCGWINSZ: libc::c_ulong = 0x40087468;
+        pub const TIOCGWINSZ: c_ulong = 0x40087468;
     }
 
     // Fallback for other unix
@@ -241,13 +244,13 @@ mod platform {
         pub const INPCK: u32 = 0o20;
         pub const ISTRIP: u32 = 0o40;
         pub const OPOST: u32 = 0o1;
-        pub const TIOCGWINSZ: libc::c_ulong = 0x5413;
+        pub const TIOCGWINSZ: c_ulong = 0x5413;
     }
 
     extern "C" {
         fn tcgetattr(fd: i32, termios: *mut u8) -> i32;
         fn tcsetattr(fd: i32, action: i32, termios: *const u8) -> i32;
-        fn ioctl(fd: i32, request: libc::c_ulong, ...) -> i32;
+        fn ioctl(fd: i32, request: c_ulong, ...) -> i32;
     }
 
     const TCSANOW: i32 = 0;
