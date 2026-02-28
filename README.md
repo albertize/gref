@@ -1,49 +1,48 @@
-# GREF
+# GREF-RS
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.23%2B-blue)](https://golang.org/)
+[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-orange)](https://www.rust-lang.org/)
 
-A fast, interactive search and replace tool for your terminal, powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
+A fast, interactive search and replace tool for your terminal — Rust port of [gref](https://github.com/albertize/gref). Zero dependencies beyond `regex`. No TUI framework — raw ANSI escapes and platform FFI for maximum performance and minimal binary size.
 
 ---
-![GREF Demo](/media/GREF-Demo.gif)
 
 ## Features
 
-- 🚀 **Fast regex search** across files and directories
+- 🚀 **Fast parallel regex search** across files and directories
 - 🖥️ **Interactive TUI** for previewing and selecting replacements
 - 🧠 **Smart selection**: choose lines to replace, bulk select/deselect
-- 🛡️ **Atomic file writes** for safe replacements
-- 🎨 **Customizable styles** and clear error messages
-- 🏃 **Efficient for large codebases**
+- 🛡️ **Atomic file writes** for safe replacements (temp file + rename)
+- 🎨 **Flicker-free rendering** via cursor-home + line-level clearing
+- 🏃 **Tiny binary**: single dependency (`regex`), release builds with LTO and `opt-level="z"`
+- 🔤 **UTF-8 safe**: proper char-boundary handling for multi-byte content
 
 ---
 
 ## Install
 
+### Download pre-built binaries
 
-### Go install (standard)
+Go to [Releases](https://github.com/albertize/gref-rs/releases) and download the package for your platform (Linux, macOS, Windows).
+
+### Build from source
+
 ```sh
-go install github.com/albertize/gref@latest
+cargo install --path .
 ```
-
-
-### Download pre-built binaries from GitHub Releases
-Go to [github.com/albertize/gref/releases](https://github.com/albertize/gref/releases) and download the package for your platform (Linux, macOS, Windows) from the "Assets" section.
 
 ### Local build via makefile
-You can also build binaries locally:
 
 ```sh
-make build-all
+make build-all        # Cross-compile to dist/ (linux/darwin/windows amd64)
+make build-local      # Build release and copy to ~/.cargo/bin
 ```
-You will find the binaries in the `dist/` folder for Linux, macOS, and Windows.
 
-For a quick local build and install:
-```sh
-make build-local
+On Windows, use the PowerShell script:
+
+```powershell
+.\make.ps1            # Cross-compile to dist/
 ```
-The binary will be copied to `$HOME/go/bin`.
 
 ---
 
@@ -62,36 +61,16 @@ gref [options] <pattern> [replacement] [directory]
 ### Arguments
 
 - `<pattern>`: Regex pattern to search for
-- `[replacement]`: Replacement string (if omitted, only search)
+- `[replacement]`: Replacement string (if omitted, search-only mode)
 - `[directory]`: Directory to search (default: current directory)
 
-### Example
+### Examples
 
 ```sh
 gref foo bar src      # Replace 'foo' with 'bar' in src directory
 gref foo              # Search for 'foo' only
 gref -i Foo           # Case-insensitive search for 'Foo'
-gref --help           # Show help message
 gref -e .git,*.log    # Exclude .git folders and .log files
-```
-
-### Options
-
-- `-h`, `--help` : Show help message and exit
-- `-i`, `--ignore-case` : Ignore case in pattern matching
-
-### Arguments
-
-- `<pattern>`: Regex pattern to search for
-- `[replacement]`: Replacement string (if omitted, only search)
-- `[directory]`: Directory to search (default: current directory)
-
-### Example
-
-```sh
-gref foo bar src      # Replace 'foo' with 'bar' in src directory
-gref foo              # Search for 'foo' only
-gref -i Foo           # Case-insensitive search for 'Foo'
 gref --help           # Show help message
 ```
 
@@ -99,45 +78,66 @@ gref --help           # Show help message
 
 ## Keyboard Controls
 
-- `↑`/`↓`/`j`/`k`: Move cursor up/down
-- `←`/`→`/`h`/`l`: Scroll horizontally
-- `Home`/`End`: Scroll to start/end of line
-- `Space`: Select/deselect a result for replacement
-- `a`: Select all results
-- `n`: Deselect all results
-- `Enter`: Confirm selected replacements
-- `Esc`: Cancel confirmation
-- `q`/`Ctrl+c`: Exit
+| Key | Action |
+|---|---|
+| `↑`/`↓` or `j`/`k` | Move cursor up/down |
+| `←`/`→` or `h`/`l` | Scroll horizontally |
+| `Home`/`End` | Scroll to start/end of line |
+| `Space` | Select/deselect a result for replacement |
+| `a` | Select all results |
+| `n` | Deselect all results |
+| `Enter` | Confirm selected replacements |
+| `Esc` | Cancel confirmation |
+| `q` / `Ctrl+C` | Exit |
 
 ---
 
 ## Project Structure
 
-- **main.go**: CLI entry, argument parsing, help, and UI launch
-- **model.go**: TUI state, rendering, and event handling
-- **search.go**: Efficient regex search across files, exclusion logic
-- **replace.go**: Safe, grouped replacements in files
-- **test/replace_test.go**: Extensive edge case tests for replace (Windows/Unix line endings, empty files, binary/null bytes, permission errors, overlapping matches, invalid regex, etc.)
-- **test/search_test.go**: Tests for exclude logic and pattern parsing
+```
+src/
+  main.rs          CLI entry, regex compile, search, model init, app::run()
+  lib.rs           Public module re-exports (enables integration tests)
+  cli.rs           Manual argument parsing (no clap)
+  model.rs         SearchResult, AppState, AppMode, Model
+  search.rs        Parallel regex search with thread pool + mpsc channels
+  replace.rs       Atomic file replacement via temp file + rename
+  term.rs          Raw mode FFI (Windows/Unix), ANSI escapes, Key enum, paint()
+  ui.rs            Screen rendering (pure function → String)
+  app.rs           Event loop: render → read_key → dispatch → state update
+  exclude.rs       Path exclusion (dir/, *.ext, exact filename)
+  filedetect.rs    Text vs binary detection (extension + content probe)
+tests/
+  stress_tests.rs  87 edge-case and stress tests across all modules
+```
 
 ---
 
 ## Performance
 
-GREF is designed for speed and efficiency:
+- **Parallel file traversal**: Thread pool with work-stealing via `Arc<Mutex<Receiver<PathBuf>>>`
+- **Adaptive search**: Literal prefix pre-filtering before regex matching on large files
+- **Buffered I/O**: `BufReader` with 128 KB buffer for large file scanning
+- **Atomic replacements**: Writes to temp file, then renames over original
+- **Flicker-free TUI**: Single locked `stdout` write per frame — no full-screen clear
+- **Minimal footprint**: Only `regex` crate; no runtime allocator, TUI framework, or async runtime
 
-- **Optimized Search**: Buffered reading and byte-level processing for large files
-- **Parallel File Traversal**: Uses Go concurrency for fast directory scanning
-- **Atomic Replacements**: Writes changes to temp files before replacing originals
-- **Minimal UI Overhead**: Responsive TUI adapts to terminal size
-- **Selective Processing**: Only selected lines/files are modified
+---
+
+## Building & Testing
+
+```sh
+cargo build                    # Dev build
+cargo build --release          # Release (strip=true, lto=true, opt-level="z")
+cargo test                     # 25 unit + 87 stress/edge-case tests
+cargo clippy                   # Must pass with 0 warnings
+```
 
 ---
 
 ## Related Projects
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea): TUI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss): Terminal style toolkit
+- [gref](https://github.com/albertize/gref) — the original Go implementation (Bubble Tea + Lipgloss)
 
 ---
 
