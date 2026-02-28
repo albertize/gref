@@ -23,7 +23,13 @@ A fast, interactive search and replace tool for your terminal — Rust port of [
 
 ### Download pre-built binaries
 
-Go to [Releases](https://github.com/albertize/gref-rs/releases) and download the package for your platform (Linux, macOS, Windows).
+Go to [Releases](https://github.com/albertize/gref-rs/releases) and download the binary for your platform:
+
+| OS | amd64 | arm64 |
+|---|---|---|
+| Linux | `gref-linux-amd64` | `gref-linux-arm64` |
+| macOS | `gref-darwin-amd64` | `gref-darwin-arm64` |
+| Windows | `gref-windows-amd64.exe` | `gref-windows-arm64.exe` |
 
 ### Build from source
 
@@ -31,17 +37,11 @@ Go to [Releases](https://github.com/albertize/gref-rs/releases) and download the
 cargo install --path .
 ```
 
-### Local build via makefile
+### Build and install locally
 
 ```sh
-make build-all        # Cross-compile to dist/ (linux/darwin/windows amd64)
-make build-local      # Build release and copy to ~/.cargo/bin
-```
-
-On Windows, use the PowerShell script:
-
-```powershell
-.\make.ps1            # Cross-compile to dist/
+cargo build --release
+cargo install --path .
 ```
 
 ---
@@ -132,14 +132,6 @@ cargo build --release          # Release (strip=true, lto=true, opt-level="z")
 cargo test                     # 25 unit + 87 stress/edge-case tests
 cargo clippy                   # Must pass with 0 warnings
 ```
-
----
-
-## Related Projects
-
-- [gref](https://github.com/albertize/gref) — the original Go implementation (Bubble Tea + Lipgloss)
-
----
 
 ## Contributing
 
