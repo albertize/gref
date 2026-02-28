@@ -1,8 +1,8 @@
-# Copilot Instructions — gref-rs
+# Copilot Instructions — gref
 
 ## Project Overview
 
-Rust port of [gref](https://github.com/albertize/gref) (Go). A single-binary terminal TUI for regex search-and-replace across directory trees. No TUI framework — raw ANSI escapes + platform FFI for terminal control.
+A single-binary terminal TUI for regex search-and-replace across directory trees. No TUI framework — raw ANSI escapes + platform FFI for terminal control.
 
 ## Architecture
 
