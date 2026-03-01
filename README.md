@@ -24,7 +24,7 @@ A fast, interactive search and replace tool for your terminal — Zero dependenc
 
 ### Download pre-built binaries
 
-Go to [Releases](https://github.com/albertize/gref-rs/releases) and download the binary for your platform:
+Go to [Releases](https://github.com/albertize/gref/releases) and download the binary for your platform:
 
 | OS | amd64 | arm64 |
 |---|---|---|
