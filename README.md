@@ -6,6 +6,7 @@
 A fast, interactive search and replace tool for your terminal — Rust port of [gref](https://github.com/albertize/gref). Zero dependencies beyond `regex`. No TUI framework — raw ANSI escapes and platform FFI for maximum performance and minimal binary size.
 
 ---
+![GREF Demo](/media/GREF-DEMO.gif)
 
 ## Features
 
