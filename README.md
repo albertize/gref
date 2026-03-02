@@ -30,7 +30,7 @@ Go to [Releases](https://github.com/albertize/gref/releases) and download the bi
 |---|---|---|
 | Linux | `gref-linux-amd64` | `gref-linux-arm64` |
 | macOS | `gref-darwin-amd64` | `gref-darwin-arm64` |
-| Windows | `gref-windows-amd64.exe` | `gref-windows-arm64.exe` |
+| Windows | `gref-windows-amd64` | `gref-windows-arm64` |
 
 ### Build from source
 
