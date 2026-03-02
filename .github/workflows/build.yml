@@ -16,26 +16,32 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: gref-linux-amd64
+            binary: gref
 
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             artifact: gref-linux-arm64
+            binary: gref
 
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: gref-darwin-amd64
+            binary: gref
 
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: gref-darwin-arm64
+            binary: gref
 
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact: gref-windows-amd64.exe
+            artifact: gref-windows-amd64
+            binary: gref.exe
 
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
-            artifact: gref-windows-arm64.exe
+            artifact: gref-windows-arm64
+            binary: gref.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -60,18 +66,18 @@ jobs:
 
       - name: Stage artifact (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/gref ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/gref ${{ matrix.binary }}
 
       - name: Stage artifact (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item "target/${{ matrix.target }}/release/gref.exe" "${{ matrix.artifact }}"
+        run: Copy-Item "target/${{ matrix.target }}/release/gref.exe" "${{ matrix.binary }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
 
   release:
     name: Release
