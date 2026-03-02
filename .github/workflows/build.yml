@@ -16,32 +16,21 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: gref-linux-amd64
-            binary: gref
-
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             artifact: gref-linux-arm64
-            binary: gref
-
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: gref-darwin-amd64
-            binary: gref
-
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: gref-darwin-arm64
-            binary: gref
-
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: gref-windows-amd64
-            binary: gref.exe
-
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
             artifact: gref-windows-arm64
-            binary: gref.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -64,20 +53,26 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Stage artifact (Unix)
+      - name: Package (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/gref ${{ matrix.binary }}
+        run: |
+          mkdir staging
+          cp "target/${{ matrix.target }}/release/gref" staging/
+          tar czf "${{ matrix.artifact }}.tar.gz" -C staging .
 
-      - name: Stage artifact (Windows)
+      - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item "target/${{ matrix.target }}/release/gref.exe" "${{ matrix.binary }}"
+        run: |
+          New-Item -ItemType Directory -Path staging
+          Copy-Item "target/${{ matrix.target }}/release/gref.exe" -Destination staging/
+          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.binary }}
+          path: ${{ matrix.artifact }}.*
 
   release:
     name: Release
