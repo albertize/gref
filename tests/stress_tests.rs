@@ -753,14 +753,6 @@ mod stress_tests {
     }
 
     #[test]
-    fn ui_render_done_state() {
-        let mut m = new_model(vec![], "foo", "bar", gref::model::AppMode::Default);
-        m.state = gref::model::AppState::Done;
-        let output = gref::ui::render(&mut m);
-        assert!(output.contains("Success"));
-    }
-
-    #[test]
     fn ui_render_replacing_state() {
         let mut m = new_model(vec![], "foo", "bar", gref::model::AppMode::Default);
         m.state = gref::model::AppState::Replacing;

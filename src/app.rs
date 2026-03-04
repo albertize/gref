@@ -68,9 +68,6 @@ fn event_loop(model: &mut Model) -> Result<(), String> {
             // Render the final screen
             let output = ui::render(model);
             term::paint(&output);
-
-            // Brief pause so user sees the result
-            std::thread::sleep(std::time::Duration::from_millis(800));
             break;
         }
     }
