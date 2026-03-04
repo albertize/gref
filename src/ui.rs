@@ -151,9 +151,7 @@ fn render_header(model: &Model) -> String {
         AppState::Replacing => {
             s.push_str("Replacing... wait.\n");
         }
-        AppState::Done => {
-            //s.push_str("Success.\n");
-        }
+        AppState::Done => {}
     }
 
     s
