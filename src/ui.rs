@@ -1,6 +1,20 @@
 use crate::model::{AppMode, AppState, Model};
 use crate::term;
 
+/// Count the number of decimal digits in a number.
+fn digit_count(n: usize) -> usize {
+    if n == 0 {
+        return 1;
+    }
+    let mut count = 0;
+    let mut v = n;
+    while v > 0 {
+        count += 1;
+        v /= 10;
+    }
+    count
+}
+
 /// A visible line in the TUI — either a file header or a result row.
 struct VisibleLine {
     is_header: bool,
@@ -35,7 +49,6 @@ pub fn render(model: &mut Model) -> String {
     s.push_str(&render_header(model));
 
     if model.state == AppState::Browse {
-        let display_re = regex::Regex::new(&regex::escape(&model.pattern_str)).unwrap();
         let visible_lines = build_visible_lines(model);
 
         // Find cursor line index in the visible_lines list
@@ -59,7 +72,10 @@ pub fn render(model: &mut Model) -> String {
                 break;
             }
             if v.is_header {
-                s.push_str(&format!("DIR: {}\n", v.file));
+                let prefix_len = 5; // "DIR: "
+                let max_path = (model.screen_width - 1).saturating_sub(prefix_len);
+                let truncated_file: String = v.file.chars().take(max_path).collect();
+                s.push_str(&format!("DIR: {}\n", truncated_file));
             } else if let Some(idx) = v.idx {
                 let res = &model.results[idx];
                 let is_cursor = model.cursor == idx;
@@ -80,7 +96,8 @@ pub fn render(model: &mut Model) -> String {
                 };
 
                 // Apply horizontal offset (char-based to avoid splitting multi-byte codepoints)
-                let line = &res.line_text;
+                // Expand tabs to spaces so each char = 1 visual column
+                let line = res.line_text.replace('\t', "    ");
                 let byte_offset = line
                     .char_indices()
                     .nth(model.horizontal_offset)
@@ -88,23 +105,34 @@ pub fn render(model: &mut Model) -> String {
                     .unwrap_or(line.len());
                 let visible_line = &line[byte_offset..];
 
+                // Truncate to available width so the terminal never wraps.
+                // Use screen_width - 1 to avoid writing the last column (auto-wrap).
+                let prefix_width = 2 + 3 + 1 + digit_count(res.line_num) + 2;
+                let text_width = (model.screen_width - 1).saturating_sub(prefix_width);
+                let trunc_end = visible_line
+                    .char_indices()
+                    .nth(text_width)
+                    .map(|(i, _)| i)
+                    .unwrap_or(visible_line.len());
+                let truncated = &visible_line[..trunc_end];
+
                 // Build the styled line text with match highlighting
                 s.push_str(&format!("{}{} {}: ", cursor_str, checked_str, res.line_num));
 
                 let mut last_index = 0;
-                for mat in display_re.find_iter(visible_line) {
+                for (start, matched) in truncated.match_indices(&model.pattern_str) {
                     // Text before the match
-                    s.push_str(&visible_line[last_index..mat.start()]);
+                    s.push_str(&truncated[last_index..start]);
 
                     if is_selected {
                         s.push_str(&term::style_cyan_bold(&model.replacement_str));
                     } else {
-                        s.push_str(&term::style_red(mat.as_str()));
+                        s.push_str(&term::style_red(matched));
                     }
-                    last_index = mat.end();
+                    last_index = start + matched.len();
                 }
                 // Remaining text after last match
-                s.push_str(&visible_line[last_index..]);
+                s.push_str(&truncated[last_index..]);
                 s.push('\n');
             }
         }

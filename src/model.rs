@@ -8,7 +8,6 @@ pub struct SearchResult {
     pub file_path: String,
     pub line_num: usize,
     pub line_text: String,
-    pub match_text: String,
 }
 
 /// The current UI state of the application.

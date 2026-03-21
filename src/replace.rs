@@ -140,8 +140,8 @@ mod tests {
     fn test_replace_in_file() {
         let file = write_tmp("gref_test_replace.txt", b"foo bar\nfoo baz\nbar foo");
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into(), match_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into(), match_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
+            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -155,8 +155,8 @@ mod tests {
     fn test_replace_windows_line_endings() {
         let file = write_tmp("gref_test_replace_win.txt", b"foo bar\r\nfoo baz\r\nbar foo");
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into(), match_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into(), match_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
+            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -182,9 +182,9 @@ mod tests {
     fn test_replace_only_matches() {
         let file = write_tmp("gref_test_replace_only.txt", b"foo\nfoo\nfoo");
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo".into(), match_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo".into(), match_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 3, line_text: "foo".into(), match_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 3, line_text: "foo".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -210,8 +210,8 @@ mod tests {
     fn test_replace_special_chars() {
         let file = write_tmp("gref_test_replace_special.txt", "föö bär\nföö baz\nbär föö".as_bytes());
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "föö bär".into(), match_text: "föö".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "föö baz".into(), match_text: "föö".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: "föö bär".into() },
+            SearchResult { file_path: file.clone(), line_num: 2, line_text: "föö baz".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("föö").unwrap();
@@ -230,8 +230,8 @@ mod tests {
         ];
         let file = write_tmp("gref_test_replace_byteconflict.txt", &data);
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned(), match_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: String::from_utf8_lossy(&data[8..15]).into_owned(), match_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
+            SearchResult { file_path: file.clone(), line_num: 2, line_text: String::from_utf8_lossy(&data[8..15]).into_owned() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -253,7 +253,7 @@ mod tests {
     fn test_replace_overlapping_match() {
         let file = write_tmp("gref_test_replace_overlap.txt", b"aaaaa");
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "aaaaa".into(), match_text: "aa".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: "aaaaa".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("aa").unwrap();
@@ -271,7 +271,7 @@ mod tests {
         ];
         let file = write_tmp("gref_test_replace_nullbytes.txt", &data);
         let results = vec![
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned(), match_text: "foo".into() },
+            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();

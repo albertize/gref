@@ -1,18 +1,20 @@
+use memchr::memmem;
+use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::exclude::is_excluded;
-use crate::filedetect::is_likely_text_file;
+use crate::filedetect;
+use crate::gitignore::{self, GitIgnore};
 use crate::model::SearchResult;
 
-/// Extract a literal prefix from a regex string for fast pre-filtering.
-/// Returns `Some(prefix)` if the prefix is >= 3 characters, else `None`.
-pub fn extract_literal_prefix(regex_str: &str) -> Option<String> {
+/// Extract the longest literal substring from a regex for fast pre-filtering.
+/// Returns `Some(literal)` if the longest run is >= 3 characters, else `None`.
+pub fn extract_longest_literal(regex_str: &str) -> Option<String> {
     if regex_str.contains("(?i)") {
         return None;
     }
@@ -28,250 +30,273 @@ pub fn extract_literal_prefix(regex_str: &str) -> Option<String> {
         s = &s[..s.len() - 1];
     }
 
-    let mut literal = String::new();
+    let mut best = String::new();
+    let mut current = String::new();
     let mut escaped = false;
 
     for c in s.chars() {
         if escaped {
-            literal.push(c);
+            current.push(c);
             escaped = false;
             continue;
         }
         match c {
             '\\' => escaped = true,
             '.' | '*' | '+' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' => {
-                break;
+                if current.len() > best.len() {
+                    best.clone_from(&current);
+                }
+                current.clear();
             }
-            _ => literal.push(c),
+            _ => current.push(c),
         }
     }
+    if current.len() > best.len() {
+        best = current;
+    }
 
-    if literal.len() >= 3 {
-        Some(literal)
+    if best.len() >= 3 {
+        Some(best)
     } else {
         None
     }
 }
 
-/// Search the content of a file line-by-line using the given regex.
-fn search_lines(path: &str, content: &[u8], pattern: &Regex) -> Vec<SearchResult> {
-    let mut results = Vec::new();
-    let mut line_num = 0usize;
-    let mut start = 0;
+/// Maximum file size to search (256 MB). Larger files are skipped.
+const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
 
-    while start <= content.len() {
-        line_num += 1;
-        let end = content[start..]
-            .iter()
-            .position(|&b| b == b'\n')
-            .map(|pos| start + pos + 1)
+/// Search file content using whole-buffer regex matching.
+///
+/// Instead of iterating line-by-line and restarting the regex engine per line,
+/// feeds the entire buffer to `find_iter()` at once. This lets the regex engine's
+/// internal SIMD and literal optimizations (Teddy, Aho-Corasick, Boyer-Moore)
+/// work on the full buffer, skipping non-matching regions at hardware speed.
+///
+/// Line boundaries are found only for matching lines using SIMD-accelerated
+/// `memchr`/`memrchr`. Line numbers are counted incrementally.
+fn search_file(
+    path: &str,
+    content: &[u8],
+    pattern: &BytesRegex,
+    finder: Option<&memmem::Finder>,
+) -> Vec<SearchResult> {
+    if content.is_empty() {
+        return Vec::new();
+    }
+
+    // Whole-file literal quick-reject via SIMD-accelerated memmem
+    if let Some(f) = finder {
+        if f.find(content).is_none() {
+            return Vec::new();
+        }
+    }
+
+    // Whole-buffer regex search — the core rg-style optimization
+    let mut results = Vec::new();
+    let mut last_line_start = usize::MAX;
+    let mut last_counted_pos = 0;
+    let mut running_line_num: usize = 1;
+
+    for m in pattern.find_iter(content) {
+        // Find line start: SIMD backward scan for newline
+        let line_start = memchr::memrchr(b'\n', &content[..m.start()])
+            .map(|p| p + 1)
+            .unwrap_or(0);
+
+        // Dedup: skip if same line as previous match
+        if line_start == last_line_start {
+            continue;
+        }
+        last_line_start = line_start;
+
+        // Find line end: SIMD forward scan for newline
+        let raw_end = memchr::memchr(b'\n', &content[m.end()..])
+            .map(|p| m.end() + p)
             .unwrap_or(content.len());
 
-        // Exclude trailing \n (and \r if present) for the line text
-        let line_end = if end > start && content[end - 1] == b'\n' {
-            if end >= 2 && content[end - 2] == b'\r' {
-                end - 2
-            } else {
-                end - 1
-            }
+        // Strip trailing \r (Windows line endings)
+        let line_end = if raw_end > line_start && content[raw_end - 1] == b'\r' {
+            raw_end - 1
         } else {
-            end
+            raw_end
         };
 
-        let line_bytes = &content[start..line_end];
-        let line_str = String::from_utf8_lossy(line_bytes);
+        // Incremental line counting via SIMD-accelerated newline scan
+        running_line_num +=
+            memchr::memchr_iter(b'\n', &content[last_counted_pos..line_start]).count();
+        last_counted_pos = line_start;
 
-        if pattern.is_match(&line_str) {
-            let match_text = pattern
-                .find(&line_str)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default();
-            results.push(SearchResult {
-                file_path: path.to_string(),
-                line_num,
-                line_text: line_str.into_owned(),
-                match_text,
-            });
-        }
-
-        if end == content.len() && (start == end || content[end - 1] != b'\n') {
-            break;
-        }
-        start = end;
+        let line_text = String::from_utf8_lossy(&content[line_start..line_end]).into_owned();
+        results.push(SearchResult {
+            file_path: path.to_string(),
+            line_num: running_line_num,
+            line_text,
+        });
     }
 
     results
 }
 
-/// Read entire small file into memory, quick-reject, then search lines.
-fn search_small_file(path: &str, pattern: &Regex) -> Vec<SearchResult> {
-    let content = match fs::read(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
+/// Directories to always skip during walk (sorted for binary search).
+const SKIP_DIRS: &[&str] = &[
+    ".cache", ".git", ".hg", ".mypy_cache", ".next", ".nuxt",
+    ".pytest_cache", ".svn", ".tox", ".venv",
+    "__pycache__", "node_modules", "target", "venv",
+];
 
-    let content_str = String::from_utf8_lossy(&content);
-    if !pattern.is_match(&content_str) {
-        return Vec::new();
-    }
-
-    search_lines(path, &content, pattern)
+/// Check if a directory entry has the Windows hidden file attribute.
+#[cfg(windows)]
+fn is_hidden_windows(entry: &std::fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    entry
+        .metadata()
+        .map(|m| m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+        .unwrap_or(false)
 }
 
-/// Stream a large file line-by-line to avoid loading it all into memory.
-fn search_large_file(path: &str, pattern: &Regex) -> Vec<SearchResult> {
-    let file = match fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return Vec::new(),
-    };
-
-    let reader = BufReader::with_capacity(128 * 1024, file);
-    let mut results = Vec::new();
-    let mut line_num = 0usize;
-    let mut buf = Vec::with_capacity(1024);
-
-    let mut reader = reader;
-    loop {
-        buf.clear();
-        let bytes_read = match reader.read_until(b'\n', &mut buf) {
-            Ok(n) => n,
-            Err(_) => break,
-        };
-        if bytes_read == 0 {
-            break;
-        }
-        line_num += 1;
-
-        // Strip trailing newline chars for matching
-        let line_end = if buf.ends_with(b"\r\n") {
-            buf.len() - 2
-        } else if buf.ends_with(b"\n") {
-            buf.len() - 1
-        } else {
-            buf.len()
-        };
-
-        let line_str = String::from_utf8_lossy(&buf[..line_end]);
-        if pattern.is_match(&line_str) {
-            let match_text = pattern
-                .find(&line_str)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default();
-            results.push(SearchResult {
-                file_path: path.to_string(),
-                line_num,
-                line_text: line_str.into_owned(),
-                match_text,
-            });
-        }
-    }
-
-    results
-}
-
-/// Use a literal prefix for fast byte-level pre-filtering before regex.
-fn search_with_prefilter(path: &str, pattern: &Regex, literal: &str) -> Vec<SearchResult> {
-    let content = match fs::read(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    let literal_bytes = literal.as_bytes();
-    if !content
-        .windows(literal_bytes.len())
-        .any(|w| w == literal_bytes)
-    {
-        return Vec::new();
-    }
-
-    let content_str = String::from_utf8_lossy(&content);
-    if !pattern.is_match(&content_str) {
-        return Vec::new();
-    }
-
-    search_lines(path, &content, pattern)
-}
-
-/// Recursively collect files from the directory tree.
-fn collect_files(
+/// Recursively walk the directory tree, dispatching files to the job channel.
+///
+/// Skips hidden files/dirs when `skip_hidden` is true. On Unix, hidden means
+/// name starts with `.`. On Windows, also checks the `FILE_ATTRIBUTE_HIDDEN`
+/// file attribute (e.g. `AppData`, `$Recycle.Bin`).
+///
+/// Loads and applies `.gitignore`, `.ignore`, and `.grefignore` rules hierarchically
+/// when `use_gitignore` is true.
+///
+/// Zero-copy path filtering: OsStr-based checks (hidden, SKIP_DIRS, gitignore)
+/// run on `entry.file_name()` before `entry.path()` allocates the full PathBuf.
+/// For files with unknown extensions, content-based binary detection is deferred
+/// to the worker threads (which already have the file in memory).
+fn walk_and_dispatch(
     root: &Path,
     exclude_list: &[String],
-) -> Vec<(PathBuf, u64)> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
+    skip_hidden: bool,
+    use_gitignore: bool,
+    job_tx: &mpsc::Sender<(PathBuf, u64)>,
+) {
+    let initial_ignore = if use_gitignore {
+        let mut ig = gitignore::load_ancestor_gitignores(root);
+        ig = ig.merge_dir(root);
+        Arc::new(ig)
+    } else {
+        Arc::new(GitIgnore::empty())
+    };
 
-    while let Some(dir) = stack.pop() {
+    let mut stack: Vec<(PathBuf, Arc<GitIgnore>)> = vec![(root.to_path_buf(), initial_ignore)];
+
+    while let Some((dir, inherited_ignore)) = stack.pop() {
         let entries = match fs::read_dir(&dir) {
             Ok(e) => e,
             Err(_) => continue,
         };
 
         for entry in entries.flatten() {
-            let path = entry.path();
-            let path_str = path.to_string_lossy().to_string();
+            // --- Phase 1: OsStr-only checks (no path allocation) ---
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
 
-            if is_excluded(&path_str, exclude_list) {
-                continue;
+            if skip_hidden {
+                if name_str.starts_with('.') {
+                    continue;
+                }
+                #[cfg(windows)]
+                if is_hidden_windows(&entry) {
+                    continue;
+                }
             }
 
-            if path.is_dir() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str == ".git" || name_str == ".cache" || name_str == "node_modules" {
+            let ft = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+
+            if ft.is_dir() {
+                if SKIP_DIRS.binary_search(&name_str.as_ref()).is_ok() {
                     continue;
                 }
-                stack.push(path);
-            } else if path.is_file() {
-                if !is_likely_text_file(&path) {
+                if inherited_ignore.is_ignored(&name_str, true) {
                     continue;
                 }
+                let path = entry.path();
+                // Load ignore files from this child directory
+                let child_ignore = if use_gitignore {
+                    Arc::new(inherited_ignore.merge_dir(&path))
+                } else {
+                    inherited_ignore.clone()
+                };
+                stack.push((path, child_ignore));
+            } else if ft.is_file() {
+                if inherited_ignore.is_ignored(&name_str, false) {
+                    continue;
+                }
+
+                // --- Phase 2: Extension-only classification (no file I/O) ---
+                let path = entry.path();
+                match filedetect::classify_by_extension(&path) {
+                    Some(false) => continue, // known binary
+                    Some(true) => {}         // known text — dispatch
+                    None => {}               // unknown — worker will check content
+                }
+
+                let path_str = path.to_string_lossy();
+                if is_excluded(&path_str, exclude_list) {
+                    continue;
+                }
+
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                files.push((path, size));
+                if job_tx.send((path, size)).is_err() {
+                    return;
+                }
             }
         }
     }
-
-    files
 }
 
-const LARGE_FILE_THRESHOLD: u64 = 10 * 1024 * 1024; // 10 MB
-
 /// Perform an adaptive parallel search across the directory tree.
+///
+/// Uses whole-buffer `bytes::Regex` matching (rg-style): the regex engine's internal
+/// SIMD/literal optimizations work on full file buffers rather than per-line.
+/// Literal pre-filtering uses `memchr::memmem` (SIMD-accelerated substring search).
 pub fn perform_search_adaptive(
     root_path: &str,
     pattern: &Regex,
     exclude_list: &[String],
+    skip_hidden: bool,
+    use_gitignore: bool,
 ) -> Result<Vec<SearchResult>, String> {
     let root = Path::new(root_path);
     if !root.exists() {
         return Err(format!("path does not exist: {}", root_path));
     }
 
-    let literal = extract_literal_prefix(pattern.as_str());
-    let has_literal = literal.is_some();
-    let files = collect_files(root, exclude_list);
+    let bytes_pattern = BytesRegex::new(pattern.as_str())
+        .map_err(|e| format!("regex compile error: {}", e))?;
+
+    // Pre-build SIMD-accelerated literal finder (shared across all workers)
+    let literal = extract_longest_literal(pattern.as_str());
+    let finder: Option<memmem::Finder<'static>> =
+        literal.map(|s| memmem::Finder::new(s.as_bytes()).into_owned());
 
     let num_workers = thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
 
-    let pattern = Arc::new(pattern.clone());
-    let literal = Arc::new(literal);
+    let bytes_pattern = Arc::new(bytes_pattern);
+    let finder = Arc::new(finder);
 
     let (job_tx, job_rx) = mpsc::channel::<(PathBuf, u64)>();
-    let (result_tx, result_rx) = mpsc::channel::<Vec<SearchResult>>();
+    let job_rx = Arc::new(Mutex::new(job_rx));
 
-    // Wrap the receiver in Arc<Mutex<>> so multiple workers can share it
-    let job_rx = Arc::new(std::sync::Mutex::new(job_rx));
-
+    // Spawn workers — each accumulates results locally (no result channel overhead)
     let mut handles = Vec::with_capacity(num_workers);
     for _ in 0..num_workers {
         let job_rx = Arc::clone(&job_rx);
-        let pattern = Arc::clone(&pattern);
-        let literal = Arc::clone(&literal);
-        let result_tx = result_tx.clone();
+        let pattern = Arc::clone(&bytes_pattern);
+        let finder = Arc::clone(&finder);
 
         handles.push(thread::spawn(move || {
+            let mut local_results = Vec::new();
             loop {
                 let job = {
                     let rx = job_rx.lock().unwrap();
@@ -279,45 +304,40 @@ pub fn perform_search_adaptive(
                 };
                 match job {
                     Ok((path, size)) => {
-                        let path_str = path.to_string_lossy().to_string();
-                        let file_results = if size > LARGE_FILE_THRESHOLD {
-                            search_large_file(&path_str, &pattern)
-                        } else if has_literal {
-                            search_with_prefilter(
-                                &path_str,
-                                &pattern,
-                                literal.as_deref().unwrap(),
-                            )
-                        } else {
-                            search_small_file(&path_str, &pattern)
-                        };
-                        if !file_results.is_empty() {
-                            let _ = result_tx.send(file_results);
+                        if size > MAX_FILE_SIZE {
+                            continue;
                         }
+                        let content = match fs::read(&path) {
+                            Ok(c) => c,
+                            Err(_) => continue,
+                        };
+                        // Fast binary detection: SIMD null-byte scan on first 512 bytes
+                        if filedetect::is_binary_content(&content) {
+                            continue;
+                        }
+                        let path_str = path.to_string_lossy().to_string();
+                        let finder_ref = (*finder).as_ref();
+                        let file_results =
+                            search_file(&path_str, &content, &pattern, finder_ref);
+                        local_results.extend(file_results);
                     }
-                    Err(_) => break, // Channel closed
+                    Err(_) => break,
                 }
             }
+            local_results
         }));
     }
 
-    // Drop our copy of result_tx so result_rx closes when workers finish
-    drop(result_tx);
-
-    // Send all jobs
-    for (path, size) in files {
-        let _ = job_tx.send((path, size));
-    }
+    // Walk and dispatch (pipelined — workers start processing immediately)
+    walk_and_dispatch(root, exclude_list, skip_hidden, use_gitignore, &job_tx);
     drop(job_tx);
 
-    // Collect results
+    // Collect results from all workers
     let mut all_results = Vec::new();
-    for batch in result_rx {
-        all_results.extend(batch);
-    }
-
     for h in handles {
-        let _ = h.join();
+        if let Ok(results) = h.join() {
+            all_results.extend(results);
+        }
     }
 
     // Sort results by file path then line number for deterministic output
@@ -335,42 +355,58 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_literal_prefix_plain() {
+    fn test_extract_longest_literal_plain() {
         assert_eq!(
-            extract_literal_prefix("hello"),
+            extract_longest_literal("hello"),
             Some("hello".to_string())
         );
     }
 
     #[test]
-    fn test_extract_literal_prefix_case_insensitive() {
-        assert_eq!(extract_literal_prefix("(?i)hello"), None);
+    fn test_extract_longest_literal_case_insensitive() {
+        assert_eq!(extract_longest_literal("(?i)hello"), None);
     }
 
     #[test]
-    fn test_extract_literal_prefix_metachar() {
-        // "he" is only 2 chars, less than 3 → None
-        assert_eq!(extract_literal_prefix("he.*lo"), None);
+    fn test_extract_longest_literal_metachar() {
+        // "he" and "lo" are both < 3 chars → None
+        assert_eq!(extract_longest_literal("he.*lo"), None);
     }
 
     #[test]
-    fn test_extract_literal_prefix_escaped() {
+    fn test_extract_longest_literal_escaped() {
         assert_eq!(
-            extract_literal_prefix("hel\\.lo"),
+            extract_longest_literal("hel\\.lo"),
             Some("hel.lo".to_string())
         );
     }
 
     #[test]
-    fn test_extract_literal_prefix_short() {
+    fn test_extract_longest_literal_short() {
         assert_eq!(
-            extract_literal_prefix("abc"),
+            extract_longest_literal("abc"),
             Some("abc".to_string())
         );
     }
 
     #[test]
-    fn test_extract_literal_prefix_too_short() {
-        assert_eq!(extract_literal_prefix("ab"), None);
+    fn test_extract_longest_literal_too_short() {
+        assert_eq!(extract_longest_literal("ab"), None);
+    }
+
+    #[test]
+    fn test_extract_longest_literal_suffix() {
+        assert_eq!(
+            extract_longest_literal(".*important_function"),
+            Some("important_function".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_longest_literal_picks_longest() {
+        assert_eq!(
+            extract_longest_literal("abc.*defghij"),
+            Some("defghij".to_string())
+        );
     }
 }

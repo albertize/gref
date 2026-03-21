@@ -7,6 +7,8 @@ pub struct CliArgs {
     pub ignore_case: bool,
     pub exclude: Vec<String>,
     pub show_help: bool,
+    pub hidden: bool,
+    pub no_ignore: bool,
 }
 
 const HELP_TEXT: &str = r#"gref - search and replace tool
@@ -18,6 +20,8 @@ Options:
   -h, --help          Show this help message and exit
   -i, --ignore-case   Ignore case in pattern matching
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
+  --hidden            Include hidden files and directories (default: skip)
+  --no-ignore         Don't respect .gitignore files
 
 Arguments:
   <pattern>         Regex pattern to search for
@@ -42,6 +46,8 @@ pub fn parse() -> CliArgs {
 pub fn parse_from(raw: &[String]) -> CliArgs {
     let mut ignore_case = false;
     let mut show_help = false;
+    let mut hidden = false;
+    let mut no_ignore = false;
     let mut exclude_str = String::new();
     let mut positional: Vec<String> = Vec::new();
 
@@ -51,6 +57,8 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         match arg.as_str() {
             "-h" | "--help" => show_help = true,
             "-i" | "--ignore-case" => ignore_case = true,
+            "--hidden" => hidden = true,
+            "--no-ignore" => no_ignore = true,
             "-e" | "--exclude" => {
                 i += 1;
                 if i < raw.len() {
@@ -97,6 +105,8 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         ignore_case,
         exclude,
         show_help,
+        hidden,
+        no_ignore,
     }
 }
 

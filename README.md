@@ -3,20 +3,23 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021%20Edition-orange)](https://www.rust-lang.org/)
 
-A fast, interactive search and replace tool for your terminal — Zero dependencies beyond `regex`. No TUI framework — raw ANSI escapes and platform FFI for maximum performance and minimal binary size.
+A fast, interactive search and replace tool for your terminal — built for speed. No TUI framework — raw ANSI escapes and platform FFI for maximum performance and minimal binary size.
 
 ---
 ![GREF Demo](/media/DEMO-GREF.gif)
 
 ## Features
 
-- 🚀 **Fast parallel regex search** across files and directories
+- 🚀 **Buffered search engine**: whole-buffer regex matching with SIMD-accelerated literal pre-filtering (`memchr::memmem`)
 - 🖥️ **Interactive TUI** for previewing and selecting replacements
 - 🧠 **Smart selection**: choose lines to replace, bulk select/deselect
 - 🛡️ **Atomic file writes** for safe replacements (temp file + rename)
 - 🎨 **Flicker-free rendering** via cursor-home + line-level clearing
-- 🏃 **Tiny binary**: single dependency (`regex`), release builds with LTO and `opt-level="z"`
+- 🏃 **Tiny binary**: only `regex` + `memchr` (transitive), release builds with LTO and strip
 - 🔤 **UTF-8 safe**: proper char-boundary handling for multi-byte content
+- 📁 **Project level filtering**: `.gitignore`, `.ignore`, `.grefignore` support with hierarchical merging
+- 👻 **Hidden file skipping**: dot-prefix (Unix) and `FILE_ATTRIBUTE_HIDDEN` (Windows)
+- 🔍 **Smart binary detection**: known extensions via lookup, unknown extensions via SIMD null-byte scan on already-loaded buffer
 
 ---
 
@@ -58,6 +61,8 @@ gref [options] <pattern> [replacement] [directory]
 - `-h`, `--help` : Show help message and exit
 - `-i`, `--ignore-case` : Ignore case in pattern matching
 - `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
+- `--hidden` : Include hidden files and directories
+- `--no-ignore` : Don't respect `.gitignore`, `.ignore`, and `.grefignore` files
 
 ### Arguments
 
@@ -72,6 +77,8 @@ gref foo bar src      # Replace 'foo' with 'bar' in src directory
 gref foo              # Search for 'foo' only
 gref -i Foo           # Case-insensitive search for 'Foo'
 gref -e .git,*.log    # Exclude .git folders and .log files
+gref --hidden foo     # Include hidden files in search
+gref --no-ignore foo  # Ignore .gitignore rules
 gref --help           # Show help message
 ```
 
@@ -99,29 +106,32 @@ gref --help           # Show help message
 src/
   main.rs          CLI entry, regex compile, search, model init, app::run()
   lib.rs           Public module re-exports (enables integration tests)
-  cli.rs           Manual argument parsing (no clap)
+  cli.rs           Manual argument parsing (no clap). Flags: -i, -e, --hidden, --no-ignore
   model.rs         SearchResult, AppState, AppMode, Model
-  search.rs        Parallel regex search with thread pool + mpsc channels
+  search.rs        Pipelined walk + parallel bytes::Regex search, literal prefilter
   replace.rs       Atomic file replacement via temp file + rename
   term.rs          Raw mode FFI (Windows/Unix), ANSI escapes, Key enum, paint()
-  ui.rs            Screen rendering (pure function → String)
+  ui.rs            Screen rendering (pure function → String), line truncation
   app.rs           Event loop: render → read_key → dispatch → state update
   exclude.rs       Path exclusion (dir/, *.ext, exact filename)
-  filedetect.rs    Text vs binary detection (extension + content probe)
+  filedetect.rs    Text vs binary detection (extension lookup + SIMD null-byte scan)
+  gitignore.rs     .gitignore/.ignore/.grefignore parsing, glob→regex, hierarchical merging
 tests/
-  stress_tests.rs  87 edge-case and stress tests across all modules
+  stress_tests.rs  98 edge-case and stress tests across all modules
 ```
 
 ---
 
 ## Performance
 
-- **Parallel file traversal**: Thread pool with work-stealing via `Arc<Mutex<Receiver<PathBuf>>>`
-- **Adaptive search**: Literal prefix pre-filtering before regex matching on large files
-- **Buffered I/O**: `BufReader` with 128 KB buffer for large file scanning
-- **Atomic replacements**: Writes to temp file, then renames over original
-- **Flicker-free TUI**: Single locked `stdout` write per frame — no full-screen clear
-- **Minimal footprint**: Only `regex` crate; no runtime allocator, TUI framework, or async runtime
+- **Whole-buffer regex search**: feeds entire file buffers to `find_iter()` — lets the regex engine's SIMD/Teddy/Aho-Corasick optimizations skip non-matching regions at hardware speed
+- **SIMD literal pre-filtering**: `memchr::memmem::Finder` rejects files that lack a literal substring before engaging the regex engine
+- **Pipelined parallel search**: file walker dispatches jobs immediately via channel; worker threads start searching as files are discovered
+- **Zero-copy path filtering**: OsStr-based hidden/skip/gitignore checks run before `entry.path()` allocates the full PathBuf
+- **Deferred binary detection**: known extensions classified without I/O; unknown extensions checked via SIMD null-byte scan on already-loaded buffer
+- **Atomic replacements**: writes to temp file, then renames over original
+- **Flicker-free TUI**: single locked `stdout` write per frame — no full-screen clear
+- **Minimal footprint**: only `regex` + `memchr`; no TUI framework, async runtime, or allocator
 
 ---
 
@@ -129,8 +139,8 @@ tests/
 
 ```sh
 cargo build                    # Dev build
-cargo build --release          # Release (strip=true, lto=true, opt-level="z")
-cargo test                     # 25 unit + 87 stress/edge-case tests
+cargo build --release          # Release (strip=true, lto=true, opt-level=3)
+cargo test                     # 41 unit + 98 stress/edge-case tests
 cargo clippy                   # Must pass with 0 warnings
 ```
 

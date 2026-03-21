@@ -5,7 +5,11 @@
 /// - Extension patterns starting with `*.` (e.g. `*.log`)
 /// - Exact filename matches (e.g. `file.txt`)
 pub fn is_excluded(path: &str, exclude_list: &[String]) -> bool {
-    let normalized = path.replace('\\', "/");
+    let normalized = if path.contains('\\') {
+        std::borrow::Cow::Owned(path.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(path)
+    };
 
     for pattern in exclude_list {
         let pattern = pattern.trim();
@@ -14,10 +18,12 @@ pub fn is_excluded(path: &str, exclude_list: &[String]) -> bool {
         }
 
         // Directory exclusion: pattern ends with "/"
-        if pattern.ends_with('/') {
-            if normalized.contains(pattern)
-                || format!("{}/", normalized).ends_with(pattern)
-            {
+        if let Some(pat_no_slash) = pattern.strip_suffix('/') {
+            if normalized.contains(pattern) {
+                return true;
+            }
+            // Check if normalized itself is the directory
+            if normalized.ends_with(pat_no_slash) {
                 return true;
             }
             continue;

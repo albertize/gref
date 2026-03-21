@@ -1,9 +1,10 @@
+pub mod app;
 pub mod cli;
 pub mod exclude;
 pub mod filedetect;
+pub mod gitignore;
 pub mod model;
 pub mod replace;
 pub mod search;
 pub mod term;
 pub mod ui;
-pub mod app;

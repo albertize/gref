@@ -2,9 +2,14 @@ use std::path::Path;
 
 /// Known text file extensions (sorted for binary search).
 const TEXT_EXTENSIONS: &[&str] = &[
-    ".bat", ".c", ".cfg", ".conf", ".cpp", ".cs", ".css", ".go", ".h", ".hpp",
-    ".html", ".ini", ".java", ".js", ".json", ".md", ".php", ".ps1", ".py",
-    ".rb", ".rs", ".rst", ".sh", ".ts", ".txt", ".xml", ".yaml", ".yml",
+    ".asm", ".bat", ".c", ".cfg", ".clj", ".cmake", ".conf", ".cpp", ".cs",
+    ".css", ".csv", ".dart", ".diff", ".elm", ".env", ".erl", ".ex", ".exs",
+    ".go", ".graphql", ".h", ".hcl", ".hpp", ".html", ".ini", ".java", ".js",
+    ".json", ".jsx", ".kt", ".less", ".lock", ".log", ".lua", ".md", ".mk",
+    ".nix", ".patch", ".php", ".pl", ".proto", ".ps1", ".py", ".rb", ".rs",
+    ".rst", ".sass", ".sbt", ".scala", ".scss", ".sh", ".sql", ".svelte",
+    ".swift", ".tf", ".toml", ".ts", ".tsv", ".tsx", ".txt", ".vue", ".xml",
+    ".yaml", ".yml", ".zig",
 ];
 
 /// Known binary file extensions (sorted for binary search).
@@ -30,18 +35,37 @@ fn is_known_binary(ext: &str) -> bool {
     BINARY_EXTENSIONS.binary_search(&ext).is_ok()
 }
 
+/// Extension-only classification. Returns:
+/// - `Some(true)` if known text extension
+/// - `Some(false)` if known binary extension
+/// - `None` if unknown (needs content-based detection)
+pub fn classify_by_extension(path: &Path) -> Option<bool> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    let lower = ext.to_lowercase();
+    let mut buf = String::with_capacity(lower.len() + 1);
+    buf.push('.');
+    buf.push_str(&lower);
+    if is_known_text(&buf) {
+        return Some(true);
+    }
+    if is_known_binary(&buf) {
+        return Some(false);
+    }
+    None
+}
+
+/// Fast binary detection on an already-loaded buffer using SIMD-accelerated null-byte scan.
+/// Returns true if the content appears to be binary (contains \0 in the first 512 bytes).
+pub fn is_binary_content(content: &[u8]) -> bool {
+    let check_len = content.len().min(512);
+    memchr::memchr(0, &content[..check_len]).is_some()
+}
+
 /// Determine if a file is likely a text file based on extension or content.
 pub fn is_likely_text_file(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let ext_lower = format!(".{}", ext.to_lowercase());
-        if is_known_text(&ext_lower) {
-            return true;
-        }
-        if is_known_binary(&ext_lower) {
-            return false;
-        }
+    if let Some(is_text) = classify_by_extension(path) {
+        return is_text;
     }
-
     // Unknown extension — check content
     is_text_file_content(path)
 }

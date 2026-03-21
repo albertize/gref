@@ -31,13 +31,11 @@ mod stress_tests {
         file: &str,
         line_num: usize,
         line_text: &str,
-        match_text: &str,
     ) -> gref::model::SearchResult {
         gref::model::SearchResult {
             file_path: file.to_string(),
             line_num,
             line_text: line_text.to_string(),
-            match_text: match_text.to_string(),
         }
     }
 
@@ -256,21 +254,21 @@ mod stress_tests {
     }
 
     // =====================================================================
-    //  SEARCH — extract_literal_prefix edge cases
+    //  SEARCH — extract_longest_literal edge cases
     // =====================================================================
 
     #[test]
     fn search_prefix_only_anchors() {
-        assert_eq!(gref::search::extract_literal_prefix("^$"), None);
+        assert_eq!(gref::search::extract_longest_literal("^$"), None);
     }
 
     #[test]
     fn search_prefix_multiline_anchor() {
-        // (?m) is stripped, but the remaining ^hello starts with ^
-        // which is a metachar → breaks before any literal is collected → None
+        // (?m) is stripped, then ^hello — ^ is a metachar that splits,
+        // but "hello" (5 chars) is collected as the longest literal
         assert_eq!(
-            gref::search::extract_literal_prefix("(?m)^hello"),
-            None
+            gref::search::extract_longest_literal("(?m)^hello"),
+            Some("hello".to_string())
         );
     }
 
@@ -278,7 +276,7 @@ mod stress_tests {
     fn search_prefix_anchor_then_multiline() {
         // ^(?m)hello → strips leading ^, then (?m), leaving "hello" → Some
         assert_eq!(
-            gref::search::extract_literal_prefix("^(?m)hello"),
+            gref::search::extract_longest_literal("^(?m)hello"),
             Some("hello".to_string())
         );
     }
@@ -286,26 +284,26 @@ mod stress_tests {
     #[test]
     fn search_prefix_all_escaped() {
         assert_eq!(
-            gref::search::extract_literal_prefix("\\[foo\\]"),
+            gref::search::extract_longest_literal("\\[foo\\]"),
             Some("[foo]".to_string())
         );
     }
 
     #[test]
     fn search_prefix_empty_string() {
-        assert_eq!(gref::search::extract_literal_prefix(""), None);
+        assert_eq!(gref::search::extract_longest_literal(""), None);
     }
 
     #[test]
     fn search_prefix_only_metachar() {
-        assert_eq!(gref::search::extract_literal_prefix(".*"), None);
+        assert_eq!(gref::search::extract_longest_literal(".*"), None);
     }
 
     #[test]
     fn search_prefix_long_literal() {
         let long = "a".repeat(1000);
         assert_eq!(
-            gref::search::extract_literal_prefix(&long),
+            gref::search::extract_longest_literal(&long),
             Some(long)
         );
     }
@@ -314,7 +312,7 @@ mod stress_tests {
     fn search_prefix_unicode_chars() {
         // "föö" has 3 characters but 5 bytes — len() >= 3 by byte count
         assert_eq!(
-            gref::search::extract_literal_prefix("föö"),
+            gref::search::extract_longest_literal("föö"),
             Some("föö".to_string())
         );
     }
@@ -322,7 +320,7 @@ mod stress_tests {
     #[test]
     fn search_prefix_trailing_backslash() {
         // Trailing backslash with no following char: escaped flag stays set, loop ends
-        assert_eq!(gref::search::extract_literal_prefix("abc\\"), Some("abc".to_string()));
+        assert_eq!(gref::search::extract_longest_literal("abc\\"), Some("abc".to_string()));
     }
 
     // =====================================================================
@@ -332,7 +330,7 @@ mod stress_tests {
     #[test]
     fn search_nonexistent_path() {
         let re = Regex::new("foo").unwrap();
-        let result = gref::search::perform_search_adaptive("/nonexistent_dir", &re, &[]);
+        let result = gref::search::perform_search_adaptive("/nonexistent_dir", &re, &[], false, false);
         assert!(result.is_err());
     }
 
@@ -345,6 +343,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
         assert!(results.is_empty());
@@ -365,6 +365,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
         assert_eq!(results.len(), 10_000);
@@ -383,6 +385,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
         // Only the top-level file, not .git/config.txt
@@ -401,6 +405,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
         assert_eq!(results.len(), 2);
@@ -425,7 +431,7 @@ mod stress_tests {
     #[test]
     fn replace_file_no_trailing_newline() {
         let file = write_tmp("gref_stress_notrail.txt", b"foo");
-        let results = vec![make_result(&file, 1, "foo", "foo")];
+        let results = vec![make_result(&file, 1, "foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -438,9 +444,9 @@ mod stress_tests {
         // Replacement is longer than the match
         let file = write_tmp("gref_stress_expand.txt", b"a\na\na\n");
         let results = vec![
-            make_result(&file, 1, "a", "a"),
-            make_result(&file, 2, "a", "a"),
-            make_result(&file, 3, "a", "a"),
+            make_result(&file, 1, "a"),
+            make_result(&file, 2, "a"),
+            make_result(&file, 3, "a"),
         ];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("a").unwrap();
@@ -457,8 +463,8 @@ mod stress_tests {
         // Replacement is shorter than the match
         let file = write_tmp("gref_stress_shrink.txt", b"LONGWORD\nLONGWORD\n");
         let results = vec![
-            make_result(&file, 1, "LONGWORD", "LONGWORD"),
-            make_result(&file, 2, "LONGWORD", "LONGWORD"),
+            make_result(&file, 1, "LONGWORD"),
+            make_result(&file, 2, "LONGWORD"),
         ];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("LONGWORD").unwrap();
@@ -470,7 +476,7 @@ mod stress_tests {
     #[test]
     fn replace_to_empty_string() {
         let file = write_tmp("gref_stress_toempty.txt", b"foo bar foo\n");
-        let results = vec![make_result(&file, 1, "foo bar foo", "foo")];
+        let results = vec![make_result(&file, 1, "foo bar foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "").unwrap();
@@ -483,7 +489,7 @@ mod stress_tests {
         let line = "x".repeat(100_000) + "foo" + &"y".repeat(100_000);
         let content = format!("{}\n", line);
         let file = write_tmp("gref_stress_longline.txt", content.as_bytes());
-        let results = vec![make_result(&file, 1, &line, "foo")];
+        let results = vec![make_result(&file, 1, &line)];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -500,7 +506,7 @@ mod stress_tests {
         let content: String = (0..5000).map(|_| "foo\n").collect();
         let file = write_tmp("gref_stress_manylines.txt", content.as_bytes());
         let results: Vec<_> = (1..=5000)
-            .map(|ln| make_result(&file, ln, "foo", "foo"))
+            .map(|ln| make_result(&file, ln, "foo"))
             .collect();
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
@@ -514,7 +520,7 @@ mod stress_tests {
     #[test]
     fn replace_multiple_matches_per_line() {
         let file = write_tmp("gref_stress_multi.txt", b"foo foo foo\n");
-        let results = vec![make_result(&file, 1, "foo foo foo", "foo")];
+        let results = vec![make_result(&file, 1, "foo foo foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "X").unwrap();
@@ -525,7 +531,7 @@ mod stress_tests {
     #[test]
     fn replace_only_middle_line() {
         let file = write_tmp("gref_stress_middle.txt", b"aaa\nfoo\nbbb\n");
-        let results = vec![make_result(&file, 2, "foo", "foo")];
+        let results = vec![make_result(&file, 2, "foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -538,8 +544,8 @@ mod stress_tests {
         let f1 = write_tmp("gref_stress_prd1.txt", b"foo\n");
         let f2 = write_tmp("gref_stress_prd2.txt", b"foo\n");
         let results = vec![
-            make_result(&f1, 1, "foo", "foo"),
-            make_result(&f2, 1, "foo", "foo"),
+            make_result(&f1, 1, "foo"),
+            make_result(&f2, 1, "foo"),
         ];
         let mut selected = HashSet::new();
         selected.insert(0);
@@ -556,9 +562,9 @@ mod stress_tests {
     fn replace_perform_replacements_partial_selection() {
         let file = write_tmp("gref_stress_prpar.txt", b"foo\nfoo\nfoo\n");
         let results = vec![
-            make_result(&file, 1, "foo", "foo"),
-            make_result(&file, 2, "foo", "foo"),
-            make_result(&file, 3, "foo", "foo"),
+            make_result(&file, 1, "foo"),
+            make_result(&file, 2, "foo"),
+            make_result(&file, 3, "foo"),
         ];
         let mut selected = HashSet::new();
         selected.insert(1); // only line 2
@@ -572,7 +578,7 @@ mod stress_tests {
     fn replace_perform_replacements_selected_out_of_range() {
         // Selected index beyond results length → silently ignored
         let file = write_tmp("gref_stress_proor.txt", b"foo\n");
-        let results = vec![make_result(&file, 1, "foo", "foo")];
+        let results = vec![make_result(&file, 1, "foo")];
         let mut selected = HashSet::new();
         selected.insert(100); // out of range
         let re = Regex::new("foo").unwrap();
@@ -618,7 +624,7 @@ mod stress_tests {
 
     #[test]
     fn ui_render_single_result() {
-        let results = vec![make_result("file.rs", 1, "hello foo world", "foo")];
+        let results = vec![make_result("file.rs", 1, "hello foo world")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         let output = gref::ui::render(&mut m);
         assert!(output.contains("file.rs"));
@@ -628,9 +634,9 @@ mod stress_tests {
     #[test]
     fn ui_render_screen_height_1() {
         let results = vec![
-            make_result("a.rs", 1, "foo", "foo"),
-            make_result("a.rs", 2, "foo", "foo"),
-            make_result("a.rs", 3, "foo", "foo"),
+            make_result("a.rs", 1, "foo"),
+            make_result("a.rs", 2, "foo"),
+            make_result("a.rs", 3, "foo"),
         ];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 1;
@@ -641,7 +647,7 @@ mod stress_tests {
 
     #[test]
     fn ui_render_screen_width_1() {
-        let results = vec![make_result("a.rs", 1, "foo bar baz", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo bar baz")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_width = 1;
         let output = gref::ui::render(&mut m);
@@ -650,7 +656,7 @@ mod stress_tests {
 
     #[test]
     fn ui_render_multibyte_offset_beyond_length() {
-        let results = vec![make_result("a.rs", 1, "日本語", "日本語")];
+        let results = vec![make_result("a.rs", 1, "日本語")];
         let mut m = new_model(results, "日本語", "bar", gref::model::AppMode::Default);
         m.horizontal_offset = 1000; // way beyond the 3 chars
         let output = gref::ui::render(&mut m);
@@ -660,7 +666,7 @@ mod stress_tests {
     #[test]
     fn ui_render_multibyte_offset_middle() {
         // The bug that was recently fixed: offset 1 into "├── main.rs"
-        let results = vec![make_result("a.rs", 1, "    ├── main.rs", "main")];
+        let results = vec![make_result("a.rs", 1, "    ├── main.rs")];
         let mut m = new_model(results, "main", "bar", gref::model::AppMode::Default);
         m.horizontal_offset = 5; // inside multi-byte char '├' if byte-based → would panic
         let output = gref::ui::render(&mut m);
@@ -670,7 +676,7 @@ mod stress_tests {
     #[test]
     fn ui_render_all_multibyte_line() {
         let text = "αβγδεζηθ";
-        let results = vec![make_result("a.rs", 1, text, "αβγ")];
+        let results = vec![make_result("a.rs", 1, text)];
         let mut m = new_model(results, "αβγ", "XYZ", gref::model::AppMode::Default);
         for offset in 0..=text.chars().count() + 5 {
             m.horizontal_offset = offset;
@@ -682,7 +688,7 @@ mod stress_tests {
     #[test]
     fn ui_render_emoji_line() {
         let text = "🔥🚀✨ foo 🎉";
-        let results = vec![make_result("a.rs", 1, text, "foo")];
+        let results = vec![make_result("a.rs", 1, text)];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         for offset in 0..=20 {
             m.horizontal_offset = offset;
@@ -693,9 +699,9 @@ mod stress_tests {
     #[test]
     fn ui_render_cursor_at_last_result() {
         let results = vec![
-            make_result("a.rs", 1, "foo", "foo"),
-            make_result("a.rs", 2, "foo", "foo"),
-            make_result("a.rs", 3, "foo", "foo"),
+            make_result("a.rs", 1, "foo"),
+            make_result("a.rs", 2, "foo"),
+            make_result("a.rs", 3, "foo"),
         ];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.cursor = 2;
@@ -706,7 +712,7 @@ mod stress_tests {
     #[test]
     fn ui_render_topline_adjustment() {
         let results: Vec<_> = (1..=100)
-            .map(|i| make_result("a.rs", i, "foo line", "foo"))
+            .map(|i| make_result("a.rs", i, "foo line"))
             .collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 5;
@@ -721,7 +727,7 @@ mod stress_tests {
     fn ui_render_many_files() {
         // Results from many distinct files → many "DIR:" headers
         let results: Vec<_> = (0..50)
-            .map(|i| make_result(&format!("dir/file_{}.rs", i), 1, "foo", "foo"))
+            .map(|i| make_result(&format!("dir/file_{}.rs", i), 1, "foo"))
             .collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 10;
@@ -732,8 +738,8 @@ mod stress_tests {
     #[test]
     fn ui_render_selected_results() {
         let results = vec![
-            make_result("a.rs", 1, "has foo", "foo"),
-            make_result("a.rs", 2, "also foo", "foo"),
+            make_result("a.rs", 1, "has foo"),
+            make_result("a.rs", 2, "also foo"),
         ];
         let mut m = new_model(results, "foo", "REPLACED", gref::model::AppMode::Default);
         m.selected.insert(0);
@@ -744,7 +750,7 @@ mod stress_tests {
 
     #[test]
     fn ui_render_confirming_state() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.selected.insert(0);
         m.state = gref::model::AppState::Confirming;
@@ -771,7 +777,7 @@ mod stress_tests {
 
     #[test]
     fn ui_render_search_only_mode() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "", gref::model::AppMode::SearchOnly);
         let output = gref::ui::render(&mut m);
         assert!(output.contains("Search Only Mode"));
@@ -864,7 +870,7 @@ mod stress_tests {
 
     #[test]
     fn app_cursor_cannot_go_below_zero() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::Up);
         assert_eq!(m.cursor, 0);
@@ -875,8 +881,8 @@ mod stress_tests {
     #[test]
     fn app_cursor_cannot_exceed_results() {
         let results = vec![
-            make_result("a.rs", 1, "foo", "foo"),
-            make_result("a.rs", 2, "foo", "foo"),
+            make_result("a.rs", 1, "foo"),
+            make_result("a.rs", 2, "foo"),
         ];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.cursor = 1;
@@ -887,7 +893,7 @@ mod stress_tests {
     #[test]
     fn app_cursor_scrolls_page() {
         let results: Vec<_> = (1..=50)
-            .map(|i| make_result("a.rs", i, "foo", "foo"))
+            .map(|i| make_result("a.rs", i, "foo"))
             .collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 5;
@@ -901,7 +907,7 @@ mod stress_tests {
 
     #[test]
     fn app_horizontal_scroll_clamp() {
-        let results = vec![make_result("a.rs", 1, "short", "short")];
+        let results = vec![make_result("a.rs", 1, "short")];
         let mut m = new_model(results, "short", "bar", gref::model::AppMode::Default);
         m.screen_width = 80;
         // Right on a short line should not produce a huge offset
@@ -912,7 +918,7 @@ mod stress_tests {
     #[test]
     fn app_horizontal_home_end() {
         let line = "x".repeat(200);
-        let results = vec![make_result("a.rs", 1, &line, "x")];
+        let results = vec![make_result("a.rs", 1, &line)];
         let mut m = new_model(results, "x", "y", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::End);
         assert_eq!(m.horizontal_offset, 1000);
@@ -922,7 +928,7 @@ mod stress_tests {
 
     #[test]
     fn app_space_toggle_selection() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::Space);
         assert!(m.selected.contains(&0));
@@ -932,7 +938,7 @@ mod stress_tests {
 
     #[test]
     fn app_space_noop_in_search_only() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "", gref::model::AppMode::SearchOnly);
         simulate_browse_key(&mut m, gref::term::Key::Space);
         assert!(m.selected.is_empty());
@@ -941,9 +947,9 @@ mod stress_tests {
     #[test]
     fn app_select_all_then_deselect() {
         let results = vec![
-            make_result("a.rs", 1, "foo", "foo"),
-            make_result("a.rs", 2, "foo", "foo"),
-            make_result("a.rs", 3, "foo", "foo"),
+            make_result("a.rs", 1, "foo"),
+            make_result("a.rs", 2, "foo"),
+            make_result("a.rs", 3, "foo"),
         ];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::Char('a'));
@@ -954,7 +960,7 @@ mod stress_tests {
 
     #[test]
     fn app_enter_no_selection_sets_error() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::Enter);
         assert!(m.error.is_some());
@@ -963,7 +969,7 @@ mod stress_tests {
 
     #[test]
     fn app_enter_with_selection_confirms() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.selected.insert(0);
         simulate_browse_key(&mut m, gref::term::Key::Enter);
@@ -972,7 +978,7 @@ mod stress_tests {
 
     #[test]
     fn app_enter_noop_in_search_only() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "", gref::model::AppMode::SearchOnly);
         simulate_browse_key(&mut m, gref::term::Key::Enter);
         assert_eq!(m.state, gref::model::AppState::Browse);
@@ -980,7 +986,7 @@ mod stress_tests {
 
     #[test]
     fn app_q_quits() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::Char('q'));
         assert_eq!(m.state, gref::model::AppState::Done);
@@ -988,7 +994,7 @@ mod stress_tests {
 
     #[test]
     fn app_ctrlc_quits() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         simulate_browse_key(&mut m, gref::term::Key::CtrlC);
         assert_eq!(m.state, gref::model::AppState::Done);
@@ -1005,7 +1011,7 @@ mod stress_tests {
 
     #[test]
     fn app_confirming_escape_returns_to_browse() {
-        let results = vec![make_result("a.rs", 1, "foo", "foo")];
+        let results = vec![make_result("a.rs", 1, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.selected.insert(0);
         m.state = gref::model::AppState::Confirming;
@@ -1047,6 +1053,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
 
@@ -1076,6 +1084,8 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &[],
+            false,
+            false,
         )
         .unwrap();
         assert_eq!(results.len(), 4);
@@ -1097,10 +1107,335 @@ mod stress_tests {
             dir.to_str().unwrap(),
             &re,
             &exclude,
+            false,
+            false,
         )
         .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // =====================================================================
+    //  HIDDEN / GITIGNORE — skip strategy tests
+    // =====================================================================
+
+    #[test]
+    fn search_skips_hidden_files_by_default() {
+        let dir = std::env::temp_dir().join("gref_stress_hidden");
+        let hidden = dir.join(".hidden_dir");
+        let _ = fs::create_dir_all(&hidden);
+        fs::write(dir.join("visible.txt"), "foo\n").unwrap();
+        fs::write(hidden.join("secret.txt"), "foo\n").unwrap();
+        fs::write(dir.join(".hidden_file.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        // skip_hidden=true, use_gitignore=false
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            true,
+            false,
+        )
+        .unwrap();
+        // Only visible.txt — hidden dir and hidden file are skipped
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("visible.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_includes_hidden_when_flag_off() {
+        let dir = std::env::temp_dir().join("gref_stress_nohide");
+        let hidden = dir.join(".hidden_dir");
+        let _ = fs::create_dir_all(&hidden);
+        fs::write(dir.join("visible.txt"), "foo\n").unwrap();
+        fs::write(hidden.join("secret.txt"), "foo\n").unwrap();
+        fs::write(dir.join(".hidden_file.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        // skip_hidden=false → include hidden
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 3);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_respects_gitignore() {
+        let dir = std::env::temp_dir().join("gref_stress_gitignore");
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join(".gitignore"), "*.log\nbuild/\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(dir.join("debug.log"), "foo\n").unwrap();
+        let build = dir.join("build");
+        let _ = fs::create_dir_all(&build);
+        fs::write(build.join("output.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        // skip_hidden=false (so .gitignore file itself isn't skipped by hidden logic),
+        // use_gitignore=true
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        // Only main.txt — debug.log and build/ are gitignored
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_gitignore_negation() {
+        let dir = std::env::temp_dir().join("gref_stress_gi_neg");
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join(".gitignore"), "*.log\n!important.log\n").unwrap();
+        fs::write(dir.join("debug.log"), "foo\n").unwrap();
+        fs::write(dir.join("important.log"), "foo\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        // main.txt + important.log (negated), but not debug.log
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("main.txt")));
+        assert!(names.iter().any(|n| n.contains("important.log")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_nested_gitignore() {
+        let dir = std::env::temp_dir().join("gref_stress_gi_nest");
+        let sub = dir.join("sub");
+        let _ = fs::create_dir_all(&sub);
+        fs::write(dir.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(sub.join(".gitignore"), "!keep.log\n").unwrap();
+        fs::write(dir.join("root.log"), "foo\n").unwrap();
+        fs::write(sub.join("keep.log"), "foo\n").unwrap();
+        fs::write(sub.join("other.log"), "foo\n").unwrap();
+        fs::write(sub.join("code.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        // code.txt always, keep.log (negated in sub), not root.log, not other.log
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("code.txt")));
+        assert!(names.iter().any(|n| n.contains("keep.log")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_no_ignore_bypasses_gitignore() {
+        let dir = std::env::temp_dir().join("gref_stress_noignore");
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(dir.join("debug.log"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        // use_gitignore=false → .gitignore is not respected
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_hidden_and_gitignore_combined() {
+        let dir = std::env::temp_dir().join("gref_stress_combo");
+        let hidden = dir.join(".secret");
+        let _ = fs::create_dir_all(&hidden);
+        fs::write(dir.join(".gitignore"), "*.tmp\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(dir.join("cache.tmp"), "foo\n").unwrap();
+        fs::write(hidden.join("data.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        // skip_hidden=true AND use_gitignore=true (default behavior)
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            true,
+            true,
+        )
+        .unwrap();
+        // Only main.txt — .secret is hidden, cache.tmp is gitignored
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // =====================================================================
+    //  .IGNORE / .GREFIGNORE — additional ignore file tests
+    // =====================================================================
+
+    #[test]
+    fn search_respects_dot_ignore_file() {
+        let dir = std::env::temp_dir().join("gref_stress_dotignore");
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join(".ignore"), "*.tmp\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(dir.join("cache.tmp"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_respects_grefignore_file() {
+        let dir = std::env::temp_dir().join("gref_stress_grefignore");
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join(".grefignore"), "*.dat\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(dir.join("data.dat"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_grefignore_overrides_gitignore() {
+        let dir = std::env::temp_dir().join("gref_stress_gi_override");
+        let _ = fs::create_dir_all(&dir);
+        // .gitignore ignores *.log, .grefignore un-ignores important.log
+        fs::write(dir.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(dir.join(".grefignore"), "!important.log\n").unwrap();
+        fs::write(dir.join("debug.log"), "foo\n").unwrap();
+        fs::write(dir.join("important.log"), "foo\n").unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        // main.txt + important.log (negated by .grefignore), but not debug.log
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("main.txt")));
+        assert!(names.iter().any(|n| n.contains("important.log")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_skips_binary_content_unknown_ext() {
+        let dir = std::env::temp_dir().join("gref_stress_bindetect");
+        let _ = fs::create_dir_all(&dir);
+        // File with unknown extension but binary content (null byte)
+        fs::write(dir.join("data.zzz"), b"foo\x00bar\n").unwrap();
+        fs::write(dir.join("text.zzz"), b"foo bar\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            false,
+        )
+        .unwrap();
+        // Only text.zzz — data.zzz has null byte → binary
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("text.zzz"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_dot_ignore_nested() {
+        let dir = std::env::temp_dir().join("gref_stress_ignore_nest");
+        let sub = dir.join("sub");
+        let _ = fs::create_dir_all(&sub);
+        fs::write(dir.join(".ignore"), "*.log\n").unwrap();
+        fs::write(sub.join(".ignore"), "!keep.log\n").unwrap();
+        fs::write(dir.join("root.log"), "foo\n").unwrap();
+        fs::write(sub.join("keep.log"), "foo\n").unwrap();
+        fs::write(sub.join("other.log"), "foo\n").unwrap();
+        fs::write(sub.join("code.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        // code.txt always, keep.log (negated in sub), not root.log, not other.log
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("code.txt")));
+        assert!(names.iter().any(|n| n.contains("keep.log")));
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -83,17 +83,11 @@ fn handle_browse_key(model: &mut Model, key: Key) {
         Key::Up | Key::Char('k') => {
             if model.cursor > 0 {
                 model.cursor -= 1;
-                if model.cursor < model.topline {
-                    model.topline = model.cursor;
-                }
             }
         }
         Key::Down | Key::Char('j') => {
             if model.cursor < model.results.len().saturating_sub(1) {
                 model.cursor += 1;
-                if model.cursor >= model.topline + model.screen_height {
-                    model.topline = model.cursor - model.screen_height + 1;
-                }
             }
         }
         Key::Left | Key::Char('h') => {
@@ -103,15 +97,13 @@ fn handle_browse_key(model: &mut Model, key: Key) {
         }
         Key::Right | Key::Char('l') => {
             let available_width = model.screen_width.saturating_sub(20).max(1);
-            let end_line = (model.topline + model.screen_height).min(model.results.len());
-            let mut max_offset = 0;
-            for i in model.topline..end_line {
-                let line_len = model.results[i].line_text.len();
-                let offset = line_len.saturating_sub(available_width);
-                if offset > max_offset {
-                    max_offset = offset;
-                }
-            }
+            let max_line_len = model
+                .results
+                .iter()
+                .map(|r| r.line_text.len())
+                .max()
+                .unwrap_or(0);
+            let max_offset = max_line_len.saturating_sub(available_width);
             model.horizontal_offset += 5;
             if model.horizontal_offset > max_offset {
                 model.horizontal_offset = max_offset;

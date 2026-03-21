@@ -28,7 +28,13 @@ fn main() {
     };
 
     // Perform search
-    let results = match search::perform_search_adaptive(&args.root_path, &pattern, &args.exclude) {
+    let results = match search::perform_search_adaptive(
+        &args.root_path,
+        &pattern,
+        &args.exclude,
+        !args.hidden,
+        !args.no_ignore,
+    ) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error during search: {}", e);
