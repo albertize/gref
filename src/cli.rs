@@ -90,7 +90,10 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
 
     let pattern = positional[0].clone();
     let replacement = positional.get(1).cloned();
-    let root_path = positional.get(2).cloned().unwrap_or_else(|| ".".to_string());
+    let root_path = positional
+        .get(2)
+        .cloned()
+        .unwrap_or_else(|| ".".to_string());
 
     let exclude = if exclude_str.is_empty() {
         Vec::new()

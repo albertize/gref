@@ -8,6 +8,9 @@ mod stress_tests {
     use std::fs;
     use std::path::Path;
 
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     fn tmp(name: &str) -> String {
@@ -28,11 +31,7 @@ mod stress_tests {
     }
 
     fn make_result(file: &str, line_num: usize, line_text: &str) -> gref::model::SearchResult {
-        gref::model::SearchResult {
-            file_path: file.to_string(),
-            line_num,
-            line_text: line_text.to_string(),
-        }
+        gref::model::SearchResult::from_display_path(file, line_num, line_text)
     }
 
     fn new_model(
@@ -1153,7 +1152,7 @@ mod stress_tests {
                 .unwrap();
         // main.txt + important.log (negated), but not debug.log
         assert_eq!(results.len(), 2);
-        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
         assert!(names.iter().any(|n| n.contains("main.txt")));
         assert!(names.iter().any(|n| n.contains("important.log")));
 
@@ -1178,7 +1177,7 @@ mod stress_tests {
                 .unwrap();
         // code.txt always, keep.log (negated in sub), not root.log, not other.log
         assert_eq!(results.len(), 2);
-        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
         assert!(names.iter().any(|n| n.contains("code.txt")));
         assert!(names.iter().any(|n| n.contains("keep.log")));
 
@@ -1365,7 +1364,7 @@ mod stress_tests {
                 .unwrap();
         // main.txt + important.log (negated by .grefignore), but not debug.log
         assert_eq!(results.len(), 2);
-        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
         assert!(names.iter().any(|n| n.contains("main.txt")));
         assert!(names.iter().any(|n| n.contains("important.log")));
 
@@ -1409,9 +1408,114 @@ mod stress_tests {
                 .unwrap();
         // code.txt always, keep.log (negated in sub), not root.log, not other.log
         assert_eq!(results.len(), 2);
-        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
         assert!(names.iter().any(|n| n.contains("code.txt")));
         assert!(names.iter().any(|n| n.contains("keep.log")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn replace_uses_raw_paths_for_non_utf8_filenames() {
+        let dir = std::env::temp_dir().join("gref_stress_raw_path_replace");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let invalid_name = std::ffi::OsString::from_vec(b"bad\xff.txt".to_vec());
+        let invalid_path = dir.join(invalid_name);
+        let replacement_char_path = dir.join("bad\u{FFFD}.txt");
+
+        fs::write(&invalid_path, b"foo INVALID\n").unwrap();
+        fs::write(&replacement_char_path, b"foo VALID\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 2);
+        let invalid_display = gref::model::SearchResult::display_path_for(&invalid_path);
+        let replacement_display =
+            gref::model::SearchResult::display_path_for(&replacement_char_path);
+        assert_ne!(invalid_display, replacement_display);
+
+        let invalid_idx = results
+            .iter()
+            .position(|r| r.path() == invalid_path.as_path())
+            .unwrap();
+
+        let mut selected = HashSet::new();
+        selected.insert(invalid_idx);
+        gref::replace::perform_replacements(&results, &selected, &re, "bar").unwrap();
+
+        assert_eq!(fs::read(&invalid_path).unwrap(), b"bar INVALID\n");
+        assert_eq!(fs::read(&replacement_char_path).unwrap(), b"foo VALID\n");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ui_render_escapes_terminal_control_sequences() {
+        let results = vec![make_result("evil.txt", 1, "\u{1b}[2Jfoo\tbar")];
+        let mut m = new_model(
+            results,
+            "nomatch",
+            "\u{1b}[31mbar",
+            gref::model::AppMode::Default,
+        );
+        m.error = Some("bad\u{1b}[1Anews".into());
+
+        let output = gref::ui::render(&mut m);
+        assert!(!output.contains("\u{1b}[1A"));
+        assert!(output.contains("\\x1B[1A"));
+
+        m.error = None;
+        let output = gref::ui::render(&mut m);
+        assert!(!output.contains("\u{1b}[2Jfoo"));
+        assert!(!output.contains("\u{1b}[31mbar"));
+        assert!(!output.contains('\t'));
+        assert!(output.contains("\\x1B[2Jfoo    bar"));
+        assert!(output.contains("\\x1B[31mbar"));
+    }
+
+    #[test]
+    fn search_truncates_large_matching_line_preview() {
+        let dir = std::env::temp_dir().join("gref_stress_line_preview_cap");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let long_line = format!("{}foo{}", "a".repeat(10_000), "b".repeat(10_000));
+        fs::write(dir.join("huge.txt"), long_line.as_bytes()).unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].line_text.contains("foo"));
+        assert!(results[0].line_text.len() < long_line.len());
+        assert!(results[0].line_text.starts_with("..."));
+        assert!(results[0].line_text.ends_with("..."));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_rejects_match_flood_before_exhausting_memory() {
+        let dir = std::env::temp_dir().join("gref_stress_result_budget");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let content: String = (0..700_000).map(|_| "foo\n").collect();
+        fs::write(dir.join("many.txt"), content).unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let err =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap_err();
+        assert!(err.contains("search result set exceeds"));
 
         let _ = fs::remove_dir_all(&dir);
     }

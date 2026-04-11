@@ -175,8 +175,8 @@ mod platform {
 
 #[cfg(unix)]
 mod platform {
-    use std::sync::Mutex;
     use std::os::raw::c_ulong;
+    use std::sync::Mutex;
 
     static ORIG_TERMIOS: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
@@ -256,7 +256,12 @@ mod platform {
     const TCSANOW: i32 = 0;
 
     fn read_u32(buf: &[u8], offset: usize) -> u32 {
-        u32::from_ne_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]])
+        u32::from_ne_bytes([
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ])
     }
 
     fn write_u32(buf: &mut [u8], offset: usize, val: u32) {
@@ -274,12 +279,14 @@ mod platform {
 
             // Modify c_lflag
             let lflag = read_u32(&buf, consts::LFLAG_OFFSET);
-            let new_lflag = lflag & !(consts::ECHO | consts::ICANON | consts::ISIG | consts::IEXTEN);
+            let new_lflag =
+                lflag & !(consts::ECHO | consts::ICANON | consts::ISIG | consts::IEXTEN);
             write_u32(&mut buf, consts::LFLAG_OFFSET, new_lflag);
 
             // Modify c_iflag
             let iflag = read_u32(&buf, consts::IFLAG_OFFSET);
-            let new_iflag = iflag & !(consts::IXON | consts::ICRNL | consts::BRKINT | consts::INPCK | consts::ISTRIP);
+            let new_iflag = iflag
+                & !(consts::IXON | consts::ICRNL | consts::BRKINT | consts::INPCK | consts::ISTRIP);
             write_u32(&mut buf, consts::IFLAG_OFFSET, new_iflag);
 
             // Keep OPOST in c_oflag
@@ -313,7 +320,10 @@ mod platform {
     pub fn terminal_size() -> (u16, u16) {
         unsafe {
             let mut ws: Winsize = std::mem::zeroed();
-            if ioctl(1, consts::TIOCGWINSZ, &mut ws as *mut Winsize) == 0 && ws.ws_col > 0 && ws.ws_row > 0 {
+            if ioctl(1, consts::TIOCGWINSZ, &mut ws as *mut Winsize) == 0
+                && ws.ws_col > 0
+                && ws.ws_row > 0
+            {
                 (ws.ws_col, ws.ws_row)
             } else {
                 (80, 24)

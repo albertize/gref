@@ -1,5 +1,7 @@
 use crate::model::{AppMode, AppState, Model};
 use crate::term;
+use std::fmt::Write as _;
+use std::sync::Arc;
 
 /// Count the number of decimal digits in a number.
 fn digit_count(n: usize) -> usize {
@@ -18,15 +20,34 @@ fn digit_count(n: usize) -> usize {
 /// A visible line in the TUI — either a file header or a result row.
 struct VisibleLine {
     is_header: bool,
-    file: String,
+    file: Arc<str>,
     idx: Option<usize>, // index into model.results (None for headers)
+}
+
+fn sanitize_terminal_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+
+    for ch in text.chars() {
+        match ch {
+            '\t' => out.push_str("    "),
+            c if c.is_control() => {
+                let mut buf = [0u8; 4];
+                for byte in c.encode_utf8(&mut buf).as_bytes() {
+                    let _ = write!(out, "\\x{:02X}", byte);
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+
+    out
 }
 
 /// Build the list of visible lines (file headers interleaved with results).
 fn build_visible_lines(model: &Model) -> Vec<VisibleLine> {
     let mut lines = Vec::with_capacity(model.results.len() * 2);
     for (i, res) in model.results.iter().enumerate() {
-        if i == 0 || res.file_path != model.results[i - 1].file_path {
+        if i == 0 || res.path() != model.results[i - 1].path() {
             lines.push(VisibleLine {
                 is_header: true,
                 file: res.file_path.clone(),
@@ -74,7 +95,8 @@ pub fn render(model: &mut Model) -> String {
             if v.is_header {
                 let prefix_len = 5; // "DIR: "
                 let max_path = (model.screen_width - 1).saturating_sub(prefix_len);
-                let truncated_file: String = v.file.chars().take(max_path).collect();
+                let safe_file = sanitize_terminal_text(&v.file);
+                let truncated_file: String = safe_file.chars().take(max_path).collect();
                 s.push_str(&format!("DIR: {}\n", truncated_file));
             } else if let Some(idx) = v.idx {
                 let res = &model.results[idx];
@@ -96,8 +118,7 @@ pub fn render(model: &mut Model) -> String {
                 };
 
                 // Apply horizontal offset (char-based to avoid splitting multi-byte codepoints)
-                // Expand tabs to spaces so each char = 1 visual column
-                let line = res.line_text.replace('\t', "    ");
+                let line = sanitize_terminal_text(&res.line_text);
                 let byte_offset = line
                     .char_indices()
                     .nth(model.horizontal_offset)
@@ -125,7 +146,9 @@ pub fn render(model: &mut Model) -> String {
                     s.push_str(&truncated[last_index..start]);
 
                     if is_selected {
-                        s.push_str(&term::style_cyan_bold(&model.replacement_str));
+                        s.push_str(&term::style_cyan_bold(&sanitize_terminal_text(
+                            &model.replacement_str,
+                        )));
                     } else {
                         s.push_str(&term::style_red(matched));
                     }
@@ -146,7 +169,10 @@ fn render_header(model: &Model) -> String {
     let mut s = String::new();
 
     if let Some(ref err) = model.error {
-        s.push_str(&term::style_red_bold(&format!("Error: {}\n", err)));
+        s.push_str(&term::style_red_bold(&format!(
+            "Error: {}\n",
+            sanitize_terminal_text(err)
+        )));
         s.push_str("\nPress 'q' to exit.\n");
         return s;
     }
@@ -154,7 +180,9 @@ fn render_header(model: &Model) -> String {
     match model.state {
         AppState::Browse => {
             s.push_str("--- Search results (Pattern: ");
-            s.push_str(&term::style_red(&model.pattern_str));
+            s.push_str(&term::style_red(&sanitize_terminal_text(
+                &model.pattern_str,
+            )));
             s.push_str(") ---\n");
             match model.mode {
                 AppMode::SearchOnly => {
@@ -162,7 +190,9 @@ fn render_header(model: &Model) -> String {
                 }
                 AppMode::Default => {
                     s.push_str("Replacing with: ");
-                    s.push_str(&term::style_green(&model.replacement_str));
+                    s.push_str(&term::style_green(&sanitize_terminal_text(
+                        &model.replacement_str,
+                    )));
                     s.push('\n');
                 }
             }
@@ -172,8 +202,8 @@ fn render_header(model: &Model) -> String {
             s.push_str(&format!("Replacing {}?\n", model.selected.len()));
             s.push_str(&format!(
                 "Pattern: {} -> Replace: {}\n\n",
-                term::style_red(&model.pattern_str),
-                term::style_green(&model.replacement_str)
+                term::style_red(&sanitize_terminal_text(&model.pattern_str)),
+                term::style_green(&sanitize_terminal_text(&model.replacement_str))
             ));
         }
         AppState::Replacing => {

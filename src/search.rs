@@ -2,9 +2,11 @@ use memchr::memmem;
 use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 use std::fs;
+use std::mem;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use crate::exclude::is_excluded;
@@ -64,6 +66,134 @@ pub fn extract_longest_literal(regex_str: &str) -> Option<String> {
 
 /// Maximum file size to search (256 MB). Larger files are skipped.
 const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
+const MAX_SEARCH_WORKERS: usize = 8;
+const MAX_IN_FLIGHT_FILE_BYTES: usize = MAX_FILE_SIZE as usize;
+const MAX_TOTAL_RESULT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_LINE_PREVIEW_BYTES: usize = 8 * 1024;
+
+struct SearchBudget {
+    max_in_flight_file_bytes: usize,
+    max_total_result_bytes: usize,
+    in_flight_file_bytes: Mutex<usize>,
+    in_flight_file_cv: Condvar,
+    total_result_bytes: AtomicUsize,
+}
+
+struct FileBudgetGuard<'a> {
+    budget: &'a SearchBudget,
+    bytes: usize,
+}
+
+impl SearchBudget {
+    fn new(max_in_flight_file_bytes: usize, max_total_result_bytes: usize) -> Self {
+        Self {
+            max_in_flight_file_bytes,
+            max_total_result_bytes,
+            in_flight_file_bytes: Mutex::new(0),
+            in_flight_file_cv: Condvar::new(),
+            total_result_bytes: AtomicUsize::new(0),
+        }
+    }
+
+    fn acquire_file_bytes(&self, bytes: usize) -> Result<FileBudgetGuard<'_>, String> {
+        if bytes > self.max_in_flight_file_bytes {
+            return Err(format!(
+                "file exceeds in-flight search memory budget of {} MiB",
+                self.max_in_flight_file_bytes / (1024 * 1024)
+            ));
+        }
+
+        let mut used = self.in_flight_file_bytes.lock().unwrap();
+        while used
+            .checked_add(bytes)
+            .map(|next| next > self.max_in_flight_file_bytes)
+            .unwrap_or(true)
+        {
+            used = self.in_flight_file_cv.wait(used).unwrap();
+        }
+        *used += bytes;
+
+        Ok(FileBudgetGuard {
+            budget: self,
+            bytes,
+        })
+    }
+
+    fn reserve_result_bytes(&self, bytes: usize) -> Result<(), String> {
+        loop {
+            let current = self.total_result_bytes.load(Ordering::Relaxed);
+            let next = current.checked_add(bytes).ok_or_else(|| {
+                "search result set size overflowed internal accounting".to_string()
+            })?;
+
+            if next > self.max_total_result_bytes {
+                return Err(format!(
+                    "search result set exceeds {} MiB memory budget",
+                    self.max_total_result_bytes / (1024 * 1024)
+                ));
+            }
+
+            if self
+                .total_result_bytes
+                .compare_exchange(current, next, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+    }
+}
+
+impl Drop for FileBudgetGuard<'_> {
+    fn drop(&mut self) {
+        let mut used = self.budget.in_flight_file_bytes.lock().unwrap();
+        *used = used.saturating_sub(self.bytes);
+        self.budget.in_flight_file_cv.notify_one();
+    }
+}
+
+fn build_line_preview(
+    content: &[u8],
+    line_start: usize,
+    line_end: usize,
+    match_start: usize,
+    match_end: usize,
+) -> String {
+    let line_len = line_end.saturating_sub(line_start);
+    if line_len <= MAX_LINE_PREVIEW_BYTES {
+        return String::from_utf8_lossy(&content[line_start..line_end]).into_owned();
+    }
+
+    let match_len = match_end.saturating_sub(match_start).max(1);
+    let mut preview_start = if match_len >= MAX_LINE_PREVIEW_BYTES {
+        match_start
+    } else {
+        match_start.saturating_sub((MAX_LINE_PREVIEW_BYTES - match_len) / 2)
+    };
+    preview_start = preview_start.max(line_start);
+
+    let max_start = line_end.saturating_sub(MAX_LINE_PREVIEW_BYTES);
+    if preview_start > max_start {
+        preview_start = max_start;
+    }
+
+    let preview_end = (preview_start + MAX_LINE_PREVIEW_BYTES).min(line_end);
+    let mut preview = String::with_capacity((preview_end - preview_start).saturating_add(6));
+    if preview_start > line_start {
+        preview.push_str("...");
+    }
+    preview.push_str(&String::from_utf8_lossy(
+        &content[preview_start..preview_end],
+    ));
+    if preview_end < line_end {
+        preview.push_str("...");
+    }
+    preview
+}
+
+fn estimate_result_bytes(line_text: &str) -> usize {
+    mem::size_of::<SearchResult>().saturating_add(line_text.len())
+}
 
 /// Search file content using whole-buffer regex matching.
 ///
@@ -75,19 +205,21 @@ const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
 /// Line boundaries are found only for matching lines using SIMD-accelerated
 /// `memchr`/`memrchr`. Line numbers are counted incrementally.
 fn search_file(
-    path: &str,
+    path: Arc<PathBuf>,
+    display_path: Arc<str>,
     content: &[u8],
     pattern: &BytesRegex,
     finder: Option<&memmem::Finder>,
-) -> Vec<SearchResult> {
+    budget: &SearchBudget,
+) -> Result<Vec<SearchResult>, String> {
     if content.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     // Whole-file literal quick-reject via SIMD-accelerated memmem
     if let Some(f) = finder {
         if f.find(content).is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
     }
 
@@ -126,22 +258,35 @@ fn search_file(
             memchr::memchr_iter(b'\n', &content[last_counted_pos..line_start]).count();
         last_counted_pos = line_start;
 
-        let line_text = String::from_utf8_lossy(&content[line_start..line_end]).into_owned();
-        results.push(SearchResult {
-            file_path: path.to_string(),
-            line_num: running_line_num,
+        let line_text = build_line_preview(content, line_start, line_end, m.start(), m.end());
+        budget.reserve_result_bytes(estimate_result_bytes(&line_text))?;
+        results.push(SearchResult::from_shared_path(
+            Arc::clone(&path),
+            Arc::clone(&display_path),
+            running_line_num,
             line_text,
-        });
+        ));
     }
 
-    results
+    Ok(results)
 }
 
 /// Directories to always skip during walk (sorted for binary search).
 const SKIP_DIRS: &[&str] = &[
-    ".cache", ".git", ".hg", ".mypy_cache", ".next", ".nuxt",
-    ".pytest_cache", ".svn", ".tox", ".venv",
-    "__pycache__", "node_modules", "target", "venv",
+    ".cache",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".next",
+    ".nuxt",
+    ".pytest_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "target",
+    "venv",
 ];
 
 /// Check if a directory entry has the Windows hidden file attribute.
@@ -175,6 +320,7 @@ fn walk_and_dispatch(
     skip_hidden: bool,
     use_gitignore: bool,
     job_tx: &mpsc::Sender<(PathBuf, u64)>,
+    stop: &AtomicBool,
 ) -> Result<(), String> {
     let initial_ignore = if use_gitignore {
         let mut ig = gitignore::load_ancestor_gitignores(root)?;
@@ -187,12 +333,20 @@ fn walk_and_dispatch(
     let mut stack: Vec<(PathBuf, Arc<GitIgnore>)> = vec![(root.to_path_buf(), initial_ignore)];
 
     while let Some((dir, inherited_ignore)) = stack.pop() {
+        if stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
         let entries = match fs::read_dir(&dir) {
             Ok(e) => e,
             Err(_) => continue,
         };
 
         for entry in entries.flatten() {
+            if stop.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+
             // --- Phase 1: OsStr-only checks (no path allocation) ---
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -271,8 +425,8 @@ pub fn perform_search_adaptive(
         return Err(format!("path does not exist: {}", root_path));
     }
 
-    let bytes_pattern = BytesRegex::new(pattern.as_str())
-        .map_err(|e| format!("regex compile error: {}", e))?;
+    let bytes_pattern =
+        BytesRegex::new(pattern.as_str()).map_err(|e| format!("regex compile error: {}", e))?;
 
     // Pre-build SIMD-accelerated literal finder (shared across all workers)
     let literal = extract_longest_literal(pattern.as_str());
@@ -281,10 +435,16 @@ pub fn perform_search_adaptive(
 
     let num_workers = thread::available_parallelism()
         .map(|n| n.get())
-        .unwrap_or(1);
+        .unwrap_or(1)
+        .clamp(1, MAX_SEARCH_WORKERS);
 
     let bytes_pattern = Arc::new(bytes_pattern);
     let finder = Arc::new(finder);
+    let budget = Arc::new(SearchBudget::new(
+        MAX_IN_FLIGHT_FILE_BYTES,
+        MAX_TOTAL_RESULT_BYTES,
+    ));
+    let stop = Arc::new(AtomicBool::new(false));
 
     let (job_tx, job_rx) = mpsc::channel::<(PathBuf, u64)>();
     let job_rx = Arc::new(Mutex::new(job_rx));
@@ -295,63 +455,120 @@ pub fn perform_search_adaptive(
         let job_rx = Arc::clone(&job_rx);
         let pattern = Arc::clone(&bytes_pattern);
         let finder = Arc::clone(&finder);
+        let budget = Arc::clone(&budget);
+        let stop = Arc::clone(&stop);
 
-        handles.push(thread::spawn(move || {
-            let mut local_results = Vec::new();
-            loop {
-                let job = {
-                    let rx = job_rx.lock().unwrap();
-                    rx.recv()
-                };
-                match job {
-                    Ok((path, size)) => {
-                        if size > MAX_FILE_SIZE {
-                            continue;
-                        }
-                        let content = match fs::read(&path) {
-                            Ok(c) => c,
-                            Err(_) => continue,
-                        };
-                        // Fast binary detection: SIMD null-byte scan on first 512 bytes
-                        if filedetect::is_binary_content(&content) {
-                            continue;
-                        }
-                        let path_str = path.to_string_lossy().to_string();
-                        let finder_ref = (*finder).as_ref();
-                        let file_results =
-                            search_file(&path_str, &content, &pattern, finder_ref);
-                        local_results.extend(file_results);
+        handles.push(thread::spawn(
+            move || -> Result<Vec<SearchResult>, String> {
+                let mut local_results = Vec::new();
+                loop {
+                    if stop.load(Ordering::Relaxed) {
+                        break;
                     }
-                    Err(_) => break,
+
+                    let job = {
+                        let rx = job_rx.lock().unwrap();
+                        rx.recv()
+                    };
+                    match job {
+                        Ok((path, size)) => {
+                            if stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            if size > MAX_FILE_SIZE {
+                                continue;
+                            }
+
+                            let reserved_bytes = match usize::try_from(size) {
+                                Ok(bytes) => bytes,
+                                Err(_) => continue,
+                            };
+                            let _file_budget = match budget.acquire_file_bytes(reserved_bytes) {
+                                Ok(guard) => guard,
+                                Err(e) => {
+                                    stop.store(true, Ordering::Relaxed);
+                                    return Err(e);
+                                }
+                            };
+
+                            let content = match fs::read(&path) {
+                                Ok(c) => c,
+                                Err(_) => continue,
+                            };
+                            // Fast binary detection: SIMD null-byte scan on first 512 bytes
+                            if filedetect::is_binary_content(&content) {
+                                continue;
+                            }
+
+                            let path = Arc::new(path);
+                            let display_path = SearchResult::display_path_for(path.as_path());
+                            let finder_ref = (*finder).as_ref();
+                            let file_results = match search_file(
+                                path,
+                                display_path,
+                                &content,
+                                &pattern,
+                                finder_ref,
+                                &budget,
+                            ) {
+                                Ok(results) => results,
+                                Err(e) => {
+                                    stop.store(true, Ordering::Relaxed);
+                                    return Err(e);
+                                }
+                            };
+                            local_results.extend(file_results);
+                        }
+                        Err(_) => break,
+                    }
                 }
-            }
-            local_results
-        }));
+                Ok(local_results)
+            },
+        ));
     }
 
     // Walk and dispatch (pipelined — workers start processing immediately)
-    let dispatch_result = walk_and_dispatch(root, exclude_list, skip_hidden, use_gitignore, &job_tx);
+    let dispatch_result = walk_and_dispatch(
+        root,
+        exclude_list,
+        skip_hidden,
+        use_gitignore,
+        &job_tx,
+        &stop,
+    );
     drop(job_tx);
 
-    if let Err(e) = dispatch_result {
-        for h in handles {
-            let _ = h.join();
-        }
-        return Err(e);
-    }
+    let mut worker_error = None;
 
     // Collect results from all workers
     let mut all_results = Vec::new();
     for h in handles {
-        if let Ok(results) = h.join() {
-            all_results.extend(results);
+        match h.join() {
+            Ok(Ok(results)) => all_results.extend(results),
+            Ok(Err(e)) => {
+                stop.store(true, Ordering::Relaxed);
+                if worker_error.is_none() {
+                    worker_error = Some(e);
+                }
+            }
+            Err(_) => {
+                stop.store(true, Ordering::Relaxed);
+                if worker_error.is_none() {
+                    worker_error = Some("search worker panicked".to_string());
+                }
+            }
         }
+    }
+
+    dispatch_result?;
+    if let Some(e) = worker_error {
+        return Err(e);
     }
 
     // Sort results by file path then line number for deterministic output
     all_results.sort_by(|a, b| {
-        a.file_path
-            .cmp(&b.file_path)
+        a.file_path_raw
+            .cmp(&b.file_path_raw)
             .then(a.line_num.cmp(&b.line_num))
     });
 
@@ -364,10 +581,7 @@ mod tests {
 
     #[test]
     fn test_extract_longest_literal_plain() {
-        assert_eq!(
-            extract_longest_literal("hello"),
-            Some("hello".to_string())
-        );
+        assert_eq!(extract_longest_literal("hello"), Some("hello".to_string()));
     }
 
     #[test]
@@ -391,10 +605,7 @@ mod tests {
 
     #[test]
     fn test_extract_longest_literal_short() {
-        assert_eq!(
-            extract_longest_literal("abc"),
-            Some("abc".to_string())
-        );
+        assert_eq!(extract_longest_literal("abc"), Some("abc".to_string()));
     }
 
     #[test]

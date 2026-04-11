@@ -147,8 +147,8 @@ fn parse_line(line: &str) -> Result<Option<IgnoreRule>, String> {
     };
 
     let regex_str = glob_to_regex(s);
-    let regex = Regex::new(&regex_str)
-        .map_err(|e| format!("invalid ignore pattern '{}': {}", line, e))?;
+    let regex =
+        Regex::new(&regex_str).map_err(|e| format!("invalid ignore pattern '{}': {}", line, e))?;
 
     Ok(Some(IgnoreRule {
         regex,
