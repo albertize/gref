@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_replace_in_file() {
         let file = write_tmp("gref_test_replace.txt", b"foo bar\nfoo baz\nbar foo");
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
             SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
         ];
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_replace_windows_line_endings() {
         let file = write_tmp("gref_test_replace_win.txt", b"foo bar\r\nfoo baz\r\nbar foo");
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
             SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
         ];
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn test_replace_empty_file() {
         let file = write_tmp("gref_test_replace_empty.txt", b"");
-        let results: Vec<SearchResult> = vec![];
+        let results: [SearchResult; 0] = [];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
         replace_in_file(&file, &refs, &pattern, "qux").unwrap();
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_replace_only_matches() {
         let file = write_tmp("gref_test_replace_only.txt", b"foo\nfoo\nfoo");
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo".into() },
             SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo".into() },
             SearchResult { file_path: file.clone(), line_num: 3, line_text: "foo".into() },
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn test_replace_no_matches() {
         let file = write_tmp("gref_test_replace_nomatch.txt", b"bar\nbaz\nquux");
-        let results: Vec<SearchResult> = vec![];
+        let results: [SearchResult; 0] = [];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
         replace_in_file(&file, &refs, &pattern, "qux").unwrap();
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_replace_special_chars() {
         let file = write_tmp("gref_test_replace_special.txt", "föö bär\nföö baz\nbär föö".as_bytes());
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: "föö bär".into() },
             SearchResult { file_path: file.clone(), line_num: 2, line_text: "föö baz".into() },
         ];
@@ -229,7 +229,7 @@ mod tests {
             b'b', b'a', b'r', b' ', b'f', b'o', b'o',
         ];
         let file = write_tmp("gref_test_replace_byteconflict.txt", &data);
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
             SearchResult { file_path: file.clone(), line_num: 2, line_text: String::from_utf8_lossy(&data[8..15]).into_owned() },
         ];
@@ -245,14 +245,15 @@ mod tests {
 
     #[test]
     fn test_replace_invalid_regexp() {
-        let result = Regex::new("[");
+        let invalid = String::from("[");
+        let result = Regex::new(&invalid);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_replace_overlapping_match() {
         let file = write_tmp("gref_test_replace_overlap.txt", b"aaaaa");
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: "aaaaa".into() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
@@ -270,7 +271,7 @@ mod tests {
             b'b', b'a', b'z', 0x00, b'f', b'o', b'o',
         ];
         let file = write_tmp("gref_test_replace_nullbytes.txt", &data);
-        let results = vec![
+        let results = [
             SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();

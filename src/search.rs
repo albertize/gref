@@ -164,20 +164,21 @@ fn is_hidden_windows(entry: &std::fs::DirEntry) -> bool {
 /// Loads and applies `.gitignore`, `.ignore`, and `.grefignore` rules hierarchically
 /// when `use_gitignore` is true.
 ///
-/// Zero-copy path filtering: OsStr-based checks (hidden, SKIP_DIRS, gitignore)
-/// run on `entry.file_name()` before `entry.path()` allocates the full PathBuf.
-/// For files with unknown extensions, content-based binary detection is deferred
-/// to the worker threads (which already have the file in memory).
+/// Cheap path filtering: OsStr-based checks (hidden and SKIP_DIRS) run on
+/// `entry.file_name()` before any full path allocation. Path-aware gitignore
+/// rules are evaluated on `entry.path()` only after those checks pass. For files
+/// with unknown extensions, content-based binary detection is deferred to the
+/// worker threads (which already have the file in memory).
 fn walk_and_dispatch(
     root: &Path,
     exclude_list: &[String],
     skip_hidden: bool,
     use_gitignore: bool,
     job_tx: &mpsc::Sender<(PathBuf, u64)>,
-) {
+) -> Result<(), String> {
     let initial_ignore = if use_gitignore {
-        let mut ig = gitignore::load_ancestor_gitignores(root);
-        ig = ig.merge_dir(root);
+        let mut ig = gitignore::load_ancestor_gitignores(root)?;
+        ig = ig.merge_dir(root)?;
         Arc::new(ig)
     } else {
         Arc::new(GitIgnore::empty())
@@ -196,14 +197,12 @@ fn walk_and_dispatch(
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
 
-            if skip_hidden {
-                if name_str.starts_with('.') {
-                    continue;
-                }
-                #[cfg(windows)]
-                if is_hidden_windows(&entry) {
-                    continue;
-                }
+            if skip_hidden && name_str.starts_with('.') {
+                continue;
+            }
+            #[cfg(windows)]
+            if skip_hidden && is_hidden_windows(&entry) {
+                continue;
             }
 
             let ft = match entry.file_type() {
@@ -215,24 +214,24 @@ fn walk_and_dispatch(
                 if SKIP_DIRS.binary_search(&name_str.as_ref()).is_ok() {
                     continue;
                 }
-                if inherited_ignore.is_ignored(&name_str, true) {
+                let path = entry.path();
+                if inherited_ignore.is_ignored(&path, true) {
                     continue;
                 }
-                let path = entry.path();
                 // Load ignore files from this child directory
                 let child_ignore = if use_gitignore {
-                    Arc::new(inherited_ignore.merge_dir(&path))
+                    Arc::new(inherited_ignore.merge_dir(&path)?)
                 } else {
                     inherited_ignore.clone()
                 };
                 stack.push((path, child_ignore));
             } else if ft.is_file() {
-                if inherited_ignore.is_ignored(&name_str, false) {
+                let path = entry.path();
+                if inherited_ignore.is_ignored(&path, false) {
                     continue;
                 }
 
                 // --- Phase 2: Extension-only classification (no file I/O) ---
-                let path = entry.path();
                 match filedetect::classify_by_extension(&path) {
                     Some(false) => continue, // known binary
                     Some(true) => {}         // known text — dispatch
@@ -246,11 +245,13 @@ fn walk_and_dispatch(
 
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 if job_tx.send((path, size)).is_err() {
-                    return;
+                    return Ok(());
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 /// Perform an adaptive parallel search across the directory tree.
@@ -329,8 +330,15 @@ pub fn perform_search_adaptive(
     }
 
     // Walk and dispatch (pipelined — workers start processing immediately)
-    walk_and_dispatch(root, exclude_list, skip_hidden, use_gitignore, &job_tx);
+    let dispatch_result = walk_and_dispatch(root, exclude_list, skip_hidden, use_gitignore, &job_tx);
     drop(job_tx);
+
+    if let Err(e) = dispatch_result {
+        for h in handles {
+            let _ = h.join();
+        }
+        return Err(e);
+    }
 
     // Collect results from all workers
     let mut all_results = Vec::new();

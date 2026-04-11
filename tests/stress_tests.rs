@@ -420,7 +420,7 @@ mod stress_tests {
     #[test]
     fn replace_single_newline_file() {
         let file = write_tmp("gref_stress_nl.txt", b"\n");
-        let results: Vec<gref::model::SearchResult> = vec![];
+        let results: [gref::model::SearchResult; 0] = [];
         let refs: Vec<&gref::model::SearchResult> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -431,7 +431,7 @@ mod stress_tests {
     #[test]
     fn replace_file_no_trailing_newline() {
         let file = write_tmp("gref_stress_notrail.txt", b"foo");
-        let results = vec![make_result(&file, 1, "foo")];
+        let results = [make_result(&file, 1, "foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -443,7 +443,7 @@ mod stress_tests {
     fn replace_expand_match() {
         // Replacement is longer than the match
         let file = write_tmp("gref_stress_expand.txt", b"a\na\na\n");
-        let results = vec![
+        let results = [
             make_result(&file, 1, "a"),
             make_result(&file, 2, "a"),
             make_result(&file, 3, "a"),
@@ -462,7 +462,7 @@ mod stress_tests {
     fn replace_shrink_match() {
         // Replacement is shorter than the match
         let file = write_tmp("gref_stress_shrink.txt", b"LONGWORD\nLONGWORD\n");
-        let results = vec![
+        let results = [
             make_result(&file, 1, "LONGWORD"),
             make_result(&file, 2, "LONGWORD"),
         ];
@@ -476,7 +476,7 @@ mod stress_tests {
     #[test]
     fn replace_to_empty_string() {
         let file = write_tmp("gref_stress_toempty.txt", b"foo bar foo\n");
-        let results = vec![make_result(&file, 1, "foo bar foo")];
+        let results = [make_result(&file, 1, "foo bar foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "").unwrap();
@@ -489,7 +489,7 @@ mod stress_tests {
         let line = "x".repeat(100_000) + "foo" + &"y".repeat(100_000);
         let content = format!("{}\n", line);
         let file = write_tmp("gref_stress_longline.txt", content.as_bytes());
-        let results = vec![make_result(&file, 1, &line)];
+        let results = [make_result(&file, 1, &line)];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -520,7 +520,7 @@ mod stress_tests {
     #[test]
     fn replace_multiple_matches_per_line() {
         let file = write_tmp("gref_stress_multi.txt", b"foo foo foo\n");
-        let results = vec![make_result(&file, 1, "foo foo foo")];
+        let results = [make_result(&file, 1, "foo foo foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "X").unwrap();
@@ -531,7 +531,7 @@ mod stress_tests {
     #[test]
     fn replace_only_middle_line() {
         let file = write_tmp("gref_stress_middle.txt", b"aaa\nfoo\nbbb\n");
-        let results = vec![make_result(&file, 2, "foo")];
+        let results = [make_result(&file, 2, "foo")];
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -543,7 +543,7 @@ mod stress_tests {
     fn replace_perform_replacements_disjoint_files() {
         let f1 = write_tmp("gref_stress_prd1.txt", b"foo\n");
         let f2 = write_tmp("gref_stress_prd2.txt", b"foo\n");
-        let results = vec![
+        let results = [
             make_result(&f1, 1, "foo"),
             make_result(&f2, 1, "foo"),
         ];
@@ -561,7 +561,7 @@ mod stress_tests {
     #[test]
     fn replace_perform_replacements_partial_selection() {
         let file = write_tmp("gref_stress_prpar.txt", b"foo\nfoo\nfoo\n");
-        let results = vec![
+        let results = [
             make_result(&file, 1, "foo"),
             make_result(&file, 2, "foo"),
             make_result(&file, 3, "foo"),
@@ -578,7 +578,7 @@ mod stress_tests {
     fn replace_perform_replacements_selected_out_of_range() {
         // Selected index beyond results length → silently ignored
         let file = write_tmp("gref_stress_proor.txt", b"foo\n");
-        let results = vec![make_result(&file, 1, "foo")];
+        let results = [make_result(&file, 1, "foo")];
         let mut selected = HashSet::new();
         selected.insert(100); // out of range
         let re = Regex::new("foo").unwrap();
@@ -1017,13 +1017,8 @@ mod stress_tests {
         m.state = gref::model::AppState::Confirming;
         m.error = Some("old error".into());
         // simulate confirming key: Escape
-        match gref::term::Key::Escape {
-            gref::term::Key::Escape => {
-                m.state = gref::model::AppState::Browse;
-                m.error = None;
-            }
-            _ => {}
-        }
+        m.state = gref::model::AppState::Browse;
+        m.error = None;
         assert_eq!(m.state, gref::model::AppState::Browse);
         assert!(m.error.is_none());
     }
@@ -1253,6 +1248,109 @@ mod stress_tests {
         let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
         assert!(names.iter().any(|n| n.contains("code.txt")));
         assert!(names.iter().any(|n| n.contains("keep.log")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_gitignore_supports_nested_path_patterns() {
+        let dir = std::env::temp_dir().join("gref_stress_gi_paths");
+        let generated = dir.join("nested/generated");
+        let vendor_cache = dir.join("vendor/cache");
+        let _ = fs::create_dir_all(&generated);
+        let _ = fs::create_dir_all(&vendor_cache);
+        fs::write(
+            dir.join(".gitignore"),
+            "nested/generated/\nvendor/cache/*.txt\n",
+        )
+        .unwrap();
+        fs::write(dir.join("main.txt"), "foo\n").unwrap();
+        fs::write(generated.join("secret.txt"), "foo\n").unwrap();
+        fs::write(vendor_cache.join("secret.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_gitignore_does_not_load_ancestors_outside_repo() {
+        let parent = std::env::temp_dir().join("gref_stress_gi_outside_repo");
+        let project = parent.join("project");
+        let _ = fs::create_dir_all(&project);
+        fs::write(parent.join(".gitignore"), "*.txt\n").unwrap();
+        fs::write(project.join("target.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            project.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("target.txt"));
+
+        let _ = fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn search_gitignore_keeps_repo_ancestor_rules() {
+        let repo = std::env::temp_dir().join("gref_stress_gi_repo_ancestor");
+        let sub = repo.join("sub");
+        let _ = fs::create_dir_all(repo.join(".git"));
+        let _ = fs::create_dir_all(&sub);
+        fs::write(repo.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(sub.join("debug.log"), "foo\n").unwrap();
+        fs::write(sub.join("main.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let results = gref::search::perform_search_adaptive(
+            sub.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("main.txt"));
+
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn search_rejects_oversized_gitignore() {
+        let dir = std::env::temp_dir().join("gref_stress_gi_oversized_err");
+        let sensitive = dir.join("sensitive");
+        let _ = fs::create_dir_all(&sensitive);
+        let mut content = String::from("sensitive/\n");
+        content.push_str(&"x\n".repeat(600_000));
+        fs::write(dir.join(".gitignore"), content).unwrap();
+        fs::write(sensitive.join("secret.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let err = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            false,
+            true,
+        )
+        .unwrap_err();
+        assert!(err.contains("ignore file exceeds"));
 
         let _ = fs::remove_dir_all(&dir);
     }
