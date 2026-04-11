@@ -26,6 +26,7 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 ## Key Design Decisions
 
 - **Zero external TUI deps**: Terminal is managed via direct platform FFI (`SetConsoleMode` on Windows, `tcsetattr` on Unix). See `term.rs` platform modules.
+- **Unix raw-mode invariant**: `term.rs` still uses hard-coded `termios` byte offsets. On Linux, `c_cc[VTIME]` is byte 22 and `c_cc[VMIN]` is byte 23; raw mode must keep `VTIME=1`, `VMIN=0` so lone `Esc` resolves via timeout instead of blocking the event loop.
 - **Minimal deps**: `regex = "1"` + `memchr = "2"` (memchr is already a transitive dep of regex) — no clap, crossterm, walkdir, or rayon.
 - **Flicker-free rendering**: `term::paint()` uses cursor-home + per-line clear-to-EOL + clear-to-EOS in a single locked stdout write. Never use `CLEAR_SCREEN` (`\x1b[2J`).
 - **UTF-8 safe slicing**: Horizontal offset uses `char_indices().nth()` — never byte-index into display strings (see `ui.rs`).

@@ -190,8 +190,8 @@ mod platform {
         pub const LFLAG_OFFSET: usize = 12; // c_lflag is at byte 12 on Linux
         pub const IFLAG_OFFSET: usize = 0;
         pub const OFLAG_OFFSET: usize = 4;
-        pub const VMIN_OFFSET: usize = 22; // c_cc[VMIN] on Linux (VMIN=6, offset 17+6-1=22)
-        pub const VTIME_OFFSET: usize = 23;
+        pub const VTIME_OFFSET: usize = 22; // c_cc[VTIME=5] starts at byte 17 on Linux
+        pub const VMIN_OFFSET: usize = 23; // c_cc[VMIN=6] follows VTIME on Linux
         pub const ECHO: u32 = 0o10;
         pub const ICANON: u32 = 0o2;
         pub const ISIG: u32 = 0o1;
@@ -269,6 +269,27 @@ mod platform {
         buf[offset..offset + 4].copy_from_slice(&bytes);
     }
 
+    fn configure_raw_mode(buf: &mut [u8]) {
+        // Modify c_lflag
+        let lflag = read_u32(buf, consts::LFLAG_OFFSET);
+        let new_lflag = lflag & !(consts::ECHO | consts::ICANON | consts::ISIG | consts::IEXTEN);
+        write_u32(buf, consts::LFLAG_OFFSET, new_lflag);
+
+        // Modify c_iflag
+        let iflag = read_u32(buf, consts::IFLAG_OFFSET);
+        let new_iflag = iflag
+            & !(consts::IXON | consts::ICRNL | consts::BRKINT | consts::INPCK | consts::ISTRIP);
+        write_u32(buf, consts::IFLAG_OFFSET, new_iflag);
+
+        // Keep OPOST in c_oflag
+        let oflag = read_u32(buf, consts::OFLAG_OFFSET);
+        write_u32(buf, consts::OFLAG_OFFSET, oflag | consts::OPOST);
+
+        // Set VMIN=0, VTIME=1 (100ms timeout)
+        buf[consts::VMIN_OFFSET] = 0;
+        buf[consts::VTIME_OFFSET] = 1;
+    }
+
     pub fn enable_raw_mode() {
         unsafe {
             let mut buf = vec![0u8; TERMIOS_BUF_SIZE];
@@ -277,25 +298,7 @@ mod platform {
             }
             *ORIG_TERMIOS.lock().unwrap() = Some(buf.clone());
 
-            // Modify c_lflag
-            let lflag = read_u32(&buf, consts::LFLAG_OFFSET);
-            let new_lflag =
-                lflag & !(consts::ECHO | consts::ICANON | consts::ISIG | consts::IEXTEN);
-            write_u32(&mut buf, consts::LFLAG_OFFSET, new_lflag);
-
-            // Modify c_iflag
-            let iflag = read_u32(&buf, consts::IFLAG_OFFSET);
-            let new_iflag = iflag
-                & !(consts::IXON | consts::ICRNL | consts::BRKINT | consts::INPCK | consts::ISTRIP);
-            write_u32(&mut buf, consts::IFLAG_OFFSET, new_iflag);
-
-            // Keep OPOST in c_oflag
-            let oflag = read_u32(&buf, consts::OFLAG_OFFSET);
-            write_u32(&mut buf, consts::OFLAG_OFFSET, oflag | consts::OPOST);
-
-            // Set VMIN=0, VTIME=1 (100ms timeout)
-            buf[consts::VMIN_OFFSET] = 0;
-            buf[consts::VTIME_OFFSET] = 1;
+            configure_raw_mode(&mut buf);
 
             tcsetattr(0, TCSANOW, buf.as_ptr());
         }
@@ -328,6 +331,22 @@ mod platform {
             } else {
                 (80, 24)
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn configure_raw_mode_sets_linux_vtime_before_vmin() {
+            let mut buf = vec![0u8; TERMIOS_BUF_SIZE];
+
+            configure_raw_mode(&mut buf);
+
+            assert_eq!(buf[22], 1, "Linux c_cc[VTIME] must receive the timeout");
+            assert_eq!(buf[23], 0, "Linux c_cc[VMIN] must allow lone Esc polling");
         }
     }
 }
