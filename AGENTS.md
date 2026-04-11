@@ -41,12 +41,11 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 
 ## Build & Test
 
-```powershell
+```bash
 cargo build                    # dev build
 cargo build --release          # release (strip=true, lto=true, opt-level=3)
 cargo test                     # 41 unit + 98 stress/edge-case tests
 cargo clippy                   # must pass with 0 warnings
-.\make.ps1                     # cross-compile to dist/ (linux/darwin/windows amd64)
 ```
 
 ## Test Structure
@@ -77,3 +76,10 @@ cargo clippy                   # must pass with 0 warnings
 - When adding new file extensions, maintain sorted order in `filedetect.rs` arrays (binary search)
 - Prefer `Cow` / non-allocating checks over `format!` / `String` in hot paths
 - Keep clippy at 0 warnings — use `strip_suffix`/`strip_prefix` instead of manual slicing, collapse nested ifs
+
+## Repo Memory
+
+- Treat this file as the repo's durable memory.
+- When you learn a new repo-specific fact that is likely to matter for future work, add it here or fold it into the most relevant existing section.
+- Keep additions compact and high-signal: record only important architecture, invariants, workflows, performance constraints, or test conventions.
+- Do not add temporary notes, one-off debugging details, obvious observations, or duplicate information.
