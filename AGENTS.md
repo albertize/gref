@@ -1,4 +1,4 @@
-# Copilot Instructions — gref
+# AGENTS Instructions — gref
 
 ## Project Overview
 
