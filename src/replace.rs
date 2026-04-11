@@ -1,7 +1,8 @@
+use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::model::SearchResult;
 
 static TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+const MAX_REPLACE_LINE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Generate a unique temporary file path in the same directory as the source file.
 fn tmp_path_for(file_path: &str) -> String {
@@ -25,6 +27,149 @@ fn tmp_path_for(file_path: &str) -> String {
     dir.join(name).to_string_lossy().to_string()
 }
 
+fn compile_bytes_pattern(pattern: &Regex) -> Result<BytesRegex, String> {
+    BytesRegex::new(pattern.as_str())
+        .map_err(|e| format!("failed to compile replacement regex: {}", e))
+}
+
+enum CaptureRef<'a> {
+    Index(usize),
+    Name(&'a str),
+}
+
+fn parse_capture_ref(replacement: &[u8]) -> Option<(usize, CaptureRef<'_>)> {
+    if replacement.len() <= 1 || replacement[0] != b'$' {
+        return None;
+    }
+
+    if replacement[1] == b'{' {
+        let end = replacement[2..].iter().position(|&b| b == b'}')? + 2;
+        let name = std::str::from_utf8(&replacement[2..end]).ok()?;
+        let cap = match name.parse::<usize>() {
+            Ok(index) => CaptureRef::Index(index),
+            Err(_) => CaptureRef::Name(name),
+        };
+        return Some((end + 1, cap));
+    }
+
+    let mut end = 1usize;
+    while replacement
+        .get(end)
+        .copied()
+        .map(|b| b.is_ascii_alphanumeric() || b == b'_')
+        .unwrap_or(false)
+    {
+        end += 1;
+    }
+    if end == 1 {
+        return None;
+    }
+
+    let name = std::str::from_utf8(&replacement[1..end]).ok()?;
+    let cap = match name.parse::<usize>() {
+        Ok(index) => CaptureRef::Index(index),
+        Err(_) => CaptureRef::Name(name),
+    };
+    Some((end, cap))
+}
+
+fn write_capture<W: Write>(
+    writer: &mut W,
+    caps: &regex::bytes::Captures<'_>,
+    cap_ref: CaptureRef<'_>,
+) -> io::Result<()> {
+    let matched = match cap_ref {
+        CaptureRef::Index(index) => caps.get(index),
+        CaptureRef::Name(name) => caps.name(name),
+    };
+    if let Some(m) = matched {
+        writer.write_all(m.as_bytes())?;
+    }
+    Ok(())
+}
+
+fn write_expanded_replacement<W: Write>(
+    writer: &mut W,
+    replacement: &[u8],
+    caps: &regex::bytes::Captures<'_>,
+) -> io::Result<()> {
+    let mut offset = 0usize;
+
+    while let Some(rel_dollar) = replacement[offset..].iter().position(|&b| b == b'$') {
+        let dollar = offset + rel_dollar;
+        writer.write_all(&replacement[offset..dollar])?;
+
+        if replacement.get(dollar + 1) == Some(&b'$') {
+            writer.write_all(b"$")?;
+            offset = dollar + 2;
+            continue;
+        }
+
+        if let Some((end, cap_ref)) = parse_capture_ref(&replacement[dollar..]) {
+            write_capture(writer, caps, cap_ref)?;
+            offset = dollar + end;
+            continue;
+        }
+
+        writer.write_all(b"$")?;
+        offset = dollar + 1;
+    }
+
+    writer.write_all(&replacement[offset..])
+}
+
+fn append_selected_bytes(
+    selected_line: &mut Vec<u8>,
+    bytes: &[u8],
+    line_num: usize,
+    max_line_bytes: usize,
+) -> Result<(), String> {
+    let new_len = selected_line
+        .len()
+        .checked_add(bytes.len())
+        .ok_or_else(|| format!("line {} exceeds maximum replaceable line size", line_num))?;
+
+    if new_len > max_line_bytes {
+        return Err(format!(
+            "line {} exceeds maximum replaceable line size of {} bytes",
+            line_num, max_line_bytes
+        ));
+    }
+
+    selected_line.extend_from_slice(bytes);
+    Ok(())
+}
+
+// Stream replacements directly to the output file so selected lines don't need a
+// second full-size allocation, while preserving arbitrary bytes outside matches.
+fn write_replaced_line<W: Write>(
+    writer: &mut W,
+    line: &[u8],
+    pattern: &BytesRegex,
+    replacement: &[u8],
+) -> io::Result<()> {
+    let mut last_end = 0usize;
+
+    if replacement.contains(&b'$') {
+        for caps in pattern.captures_iter(line) {
+            let Some(m) = caps.get(0) else {
+                continue;
+            };
+            writer.write_all(&line[last_end..m.start()])?;
+            write_expanded_replacement(writer, replacement, &caps)?;
+            last_end = m.end();
+        }
+    } else {
+        for m in pattern.find_iter(line) {
+            writer.write_all(&line[last_end..m.start()])?;
+            writer.write_all(replacement)?;
+            last_end = m.end();
+        }
+    }
+
+    writer.write_all(&line[last_end..])
+}
+
 /// Perform replacements across multiple files for the selected results.
 pub fn perform_replacements(
     all_results: &[SearchResult],
@@ -32,6 +177,8 @@ pub fn perform_replacements(
     pattern: &Regex,
     replacement: &str,
 ) -> Result<(), String> {
+    let bytes_pattern = compile_bytes_pattern(pattern)?;
+
     // Group selected results by file path
     let mut files_to_process: HashMap<&str, Vec<&SearchResult>> = HashMap::new();
     for &idx in selected {
@@ -44,9 +191,8 @@ pub fn perform_replacements(
     }
 
     for (file_path, results) in &files_to_process {
-        replace_in_file(file_path, results, pattern, replacement).map_err(|e| {
-            format!("replacement failed for {}: {}", file_path, e)
-        })?;
+        replace_in_file_bytes(file_path, results, &bytes_pattern, replacement.as_bytes())
+            .map_err(|e| format!("replacement failed for {}: {}", file_path, e))?;
     }
 
     Ok(())
@@ -59,50 +205,127 @@ pub fn replace_in_file(
     pattern: &Regex,
     replacement: &str,
 ) -> Result<(), String> {
+    let bytes_pattern = compile_bytes_pattern(pattern)?;
+    replace_in_file_bytes(file_path, results, &bytes_pattern, replacement.as_bytes())
+}
+
+fn replace_in_file_bytes(
+    file_path: &str,
+    results: &[&SearchResult],
+    pattern: &BytesRegex,
+    replacement: &[u8],
+) -> Result<(), String> {
+    replace_in_file_bytes_with_limit(
+        file_path,
+        results,
+        pattern,
+        replacement,
+        MAX_REPLACE_LINE_BYTES,
+    )
+}
+
+fn replace_in_file_bytes_with_limit(
+    file_path: &str,
+    results: &[&SearchResult],
+    pattern: &BytesRegex,
+    replacement: &[u8],
+    max_line_bytes: usize,
+) -> Result<(), String> {
     let lines_to_replace: HashSet<usize> = results.iter().map(|r| r.line_num).collect();
 
-    let src = fs::File::open(file_path)
-        .map_err(|e| format!("failed to open source: {}", e))?;
+    let src = fs::File::open(file_path).map_err(|e| format!("failed to open source: {}", e))?;
 
     let tmp = tmp_path_for(file_path);
-    let tmp_file = fs::File::create(&tmp)
-        .map_err(|e| {
-            format!("failed to create temp file: {}", e)
-        })?;
+    let tmp_file =
+        fs::File::create(&tmp).map_err(|e| format!("failed to create temp file: {}", e))?;
 
-    let reader = BufReader::new(src);
+    let mut reader = BufReader::new(src);
     let mut writer = BufWriter::new(tmp_file);
 
-    let mut line_num = 0usize;
-    let mut buf = Vec::with_capacity(1024);
-    let mut reader = reader;
+    let mut current_line_num = 1usize;
+    let mut current_line_selected = lines_to_replace.contains(&current_line_num);
+    let mut selected_line = Vec::with_capacity(1024);
 
     loop {
-        buf.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buf).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
-            format!("error reading line {}: {}", line_num + 1, e)
-        })?;
+        let consumed = {
+            let available = reader.fill_buf().map_err(|e| {
+                let _ = fs::remove_file(&tmp);
+                format!("error reading line {}: {}", current_line_num, e)
+            })?;
 
-        if bytes_read == 0 {
+            if available.is_empty() {
+                0
+            } else {
+                let mut offset = 0usize;
+                while offset < available.len() {
+                    if let Some(rel_newline) = memchr::memchr(b'\n', &available[offset..]) {
+                        let end = offset + rel_newline + 1;
+                        let chunk = &available[offset..end];
+
+                        if current_line_selected {
+                            append_selected_bytes(
+                                &mut selected_line,
+                                chunk,
+                                current_line_num,
+                                max_line_bytes,
+                            )
+                            .inspect_err(|_| {
+                                let _ = fs::remove_file(&tmp);
+                            })?;
+                            write_replaced_line(&mut writer, &selected_line, pattern, replacement)
+                                .map_err(|e| {
+                                    let _ = fs::remove_file(&tmp);
+                                    format!("error writing to temp file: {}", e)
+                                })?;
+                            selected_line.clear();
+                        } else {
+                            writer.write_all(chunk).map_err(|e| {
+                                let _ = fs::remove_file(&tmp);
+                                format!("error writing to temp file: {}", e)
+                            })?;
+                        }
+
+                        current_line_num += 1;
+                        current_line_selected = lines_to_replace.contains(&current_line_num);
+                        offset = end;
+                    } else {
+                        let chunk = &available[offset..];
+                        if current_line_selected {
+                            append_selected_bytes(
+                                &mut selected_line,
+                                chunk,
+                                current_line_num,
+                                max_line_bytes,
+                            )
+                            .inspect_err(|_| {
+                                let _ = fs::remove_file(&tmp);
+                            })?;
+                        } else {
+                            writer.write_all(chunk).map_err(|e| {
+                                let _ = fs::remove_file(&tmp);
+                                format!("error writing to temp file: {}", e)
+                            })?;
+                        }
+                        offset = available.len();
+                    }
+                }
+
+                available.len()
+            }
+        };
+
+        if consumed == 0 {
             break;
         }
 
-        line_num += 1;
+        reader.consume(consumed);
+    }
 
-        if lines_to_replace.contains(&line_num) {
-            let line_str = String::from_utf8_lossy(&buf);
-            let replaced = pattern.replace_all(&line_str, replacement);
-            writer.write_all(replaced.as_bytes()).map_err(|e| {
-                let _ = fs::remove_file(&tmp);
-                format!("error writing to temp file: {}", e)
-            })?;
-        } else {
-            writer.write_all(&buf).map_err(|e| {
-                let _ = fs::remove_file(&tmp);
-                format!("error writing to temp file: {}", e)
-            })?;
-        }
+    if current_line_selected && !selected_line.is_empty() {
+        write_replaced_line(&mut writer, &selected_line, pattern, replacement).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            format!("error writing to temp file: {}", e)
+        })?;
     }
 
     writer.flush().map_err(|e| {
@@ -140,8 +363,16 @@ mod tests {
     fn test_replace_in_file() {
         let file = write_tmp("gref_test_replace.txt", b"foo bar\nfoo baz\nbar foo");
         let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 1,
+                line_text: "foo bar".into(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 2,
+                line_text: "foo baz".into(),
+            },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -153,10 +384,21 @@ mod tests {
 
     #[test]
     fn test_replace_windows_line_endings() {
-        let file = write_tmp("gref_test_replace_win.txt", b"foo bar\r\nfoo baz\r\nbar foo");
+        let file = write_tmp(
+            "gref_test_replace_win.txt",
+            b"foo bar\r\nfoo baz\r\nbar foo",
+        );
         let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo bar".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo baz".into() },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 1,
+                line_text: "foo bar".into(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 2,
+                line_text: "foo baz".into(),
+            },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -182,9 +424,21 @@ mod tests {
     fn test_replace_only_matches() {
         let file = write_tmp("gref_test_replace_only.txt", b"foo\nfoo\nfoo");
         let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "foo".into() },
-            SearchResult { file_path: file.clone(), line_num: 3, line_text: "foo".into() },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 1,
+                line_text: "foo".into(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 2,
+                line_text: "foo".into(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 3,
+                line_text: "foo".into(),
+            },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
@@ -208,10 +462,21 @@ mod tests {
 
     #[test]
     fn test_replace_special_chars() {
-        let file = write_tmp("gref_test_replace_special.txt", "föö bär\nföö baz\nbär föö".as_bytes());
+        let file = write_tmp(
+            "gref_test_replace_special.txt",
+            "föö bär\nföö baz\nbär föö".as_bytes(),
+        );
         let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "föö bär".into() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: "föö baz".into() },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 1,
+                line_text: "föö bär".into(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 2,
+                line_text: "föö baz".into(),
+            },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("föö").unwrap();
@@ -224,22 +489,81 @@ mod tests {
     #[test]
     fn test_replace_byte_conflict() {
         let data: Vec<u8> = vec![
-            b'f', b'o', b'o', 0xff, b'b', b'a', b'r', b'\n',
-            b'f', b'o', b'o', 0xfe, b'b', b'a', b'z', b'\n',
-            b'b', b'a', b'r', b' ', b'f', b'o', b'o',
+            b'f', b'o', b'o', 0xff, b'b', b'a', b'r', b'\n', b'f', b'o', b'o', 0xfe, b'b', b'a',
+            b'z', b'\n', b'b', b'a', b'r', b' ', b'f', b'o', b'o',
         ];
         let file = write_tmp("gref_test_replace_byteconflict.txt", &data);
         let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
-            SearchResult { file_path: file.clone(), line_num: 2, line_text: String::from_utf8_lossy(&data[8..15]).into_owned() },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 1,
+                line_text: String::from_utf8_lossy(&data[0..7]).into_owned(),
+            },
+            SearchResult {
+                file_path: file.clone(),
+                line_num: 2,
+                line_text: String::from_utf8_lossy(&data[8..15]).into_owned(),
+            },
         ];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
         replace_in_file(&file, &refs, &pattern, "qux").unwrap();
         let content = fs::read(&file).unwrap();
-        // The replacement operates on the lossy string representation, so 0xff/0xfe become U+FFFD
-        // The exact result depends on from_utf8_lossy behavior
-        assert!(!content.is_empty());
+        assert_eq!(
+            content,
+            vec![
+                b'q', b'u', b'x', 0xff, b'b', b'a', b'r', b'\n', b'q', b'u', b'x', 0xfe, b'b',
+                b'a', b'z', b'\n', b'b', b'a', b'r', b' ', b'f', b'o', b'o',
+            ]
+        );
+        cleanup(&file);
+    }
+
+    #[test]
+    fn test_replace_capture_expansion() {
+        let file = write_tmp("gref_test_replace_capture.txt", b"foo-123\nbar\n");
+        let results = [SearchResult {
+            file_path: file.clone(),
+            line_num: 1,
+            line_text: "foo-123".into(),
+        }];
+        let refs: Vec<&SearchResult> = results.iter().collect();
+        let pattern = Regex::new(r"(foo)-(\d+)").unwrap();
+        replace_in_file(&file, &refs, &pattern, "$2:$1").unwrap();
+        let content = fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "123:foo\nbar\n");
+        cleanup(&file);
+    }
+
+    #[test]
+    fn test_replace_capture_expansion_with_literal_dollar() {
+        let file = write_tmp("gref_test_replace_capture_dollar.txt", b"foo-123\n");
+        let results = [SearchResult {
+            file_path: file.clone(),
+            line_num: 1,
+            line_text: "foo-123".into(),
+        }];
+        let refs: Vec<&SearchResult> = results.iter().collect();
+        let pattern = Regex::new(r"(foo)-(\d+)").unwrap();
+        replace_in_file(&file, &refs, &pattern, "$$$2").unwrap();
+        let content = fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "$123\n");
+        cleanup(&file);
+    }
+
+    #[test]
+    fn test_replace_capture_longest_name_parse() {
+        let file = write_tmp("gref_test_replace_capture_name_parse.txt", b"foo-123\n");
+        let results = [SearchResult {
+            file_path: file.clone(),
+            line_num: 1,
+            line_text: "foo-123".into(),
+        }];
+        let refs: Vec<&SearchResult> = results.iter().collect();
+        let pattern = Regex::new(r"(foo)-(\d+)").unwrap();
+        replace_in_file(&file, &refs, &pattern, "$1_$2").unwrap();
+        let content = fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "123\n");
         cleanup(&file);
     }
 
@@ -253,9 +577,11 @@ mod tests {
     #[test]
     fn test_replace_overlapping_match() {
         let file = write_tmp("gref_test_replace_overlap.txt", b"aaaaa");
-        let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: "aaaaa".into() },
-        ];
+        let results = [SearchResult {
+            file_path: file.clone(),
+            line_num: 1,
+            line_text: "aaaaa".into(),
+        }];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("aa").unwrap();
         replace_in_file(&file, &refs, &pattern, "b").unwrap();
@@ -267,18 +593,60 @@ mod tests {
     #[test]
     fn test_replace_null_bytes() {
         let data: Vec<u8> = vec![
-            b'f', b'o', b'o', 0x00, b'b', b'a', b'r', b'\n',
-            b'b', b'a', b'z', 0x00, b'f', b'o', b'o',
+            b'f', b'o', b'o', 0x00, b'b', b'a', b'r', b'\n', b'b', b'a', b'z', 0x00, b'f', b'o',
+            b'o',
         ];
         let file = write_tmp("gref_test_replace_nullbytes.txt", &data);
-        let results = [
-            SearchResult { file_path: file.clone(), line_num: 1, line_text: String::from_utf8_lossy(&data[0..7]).into_owned() },
-        ];
+        let results = [SearchResult {
+            file_path: file.clone(),
+            line_num: 1,
+            line_text: String::from_utf8_lossy(&data[0..7]).into_owned(),
+        }];
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = Regex::new("foo").unwrap();
         replace_in_file(&file, &refs, &pattern, "qux").unwrap();
         let content = fs::read(&file).unwrap();
-        assert!(!content.is_empty());
+        assert_eq!(
+            content,
+            vec![
+                b'q', b'u', b'x', 0x00, b'b', b'a', b'r', b'\n', b'b', b'a', b'z', 0x00, b'f',
+                b'o', b'o',
+            ]
+        );
         cleanup(&file);
+    }
+
+    #[test]
+    fn test_replace_selected_line_too_large_returns_error() {
+        let dir = std::env::temp_dir().join("gref_test_replace_too_large");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let file = dir.join("input.txt");
+        let data = b"keep\nfoofoofoo\nlast\n";
+        fs::write(&file, data).unwrap();
+
+        let file_str = file.to_string_lossy().to_string();
+        let results = [SearchResult {
+            file_path: file_str.clone(),
+            line_num: 2,
+            line_text: "foofoofoo".into(),
+        }];
+        let refs: Vec<&SearchResult> = results.iter().collect();
+        let pattern = compile_bytes_pattern(&Regex::new("foo").unwrap()).unwrap();
+
+        let err =
+            replace_in_file_bytes_with_limit(&file_str, &refs, &pattern, b"bar", 4).unwrap_err();
+
+        assert!(err.contains("maximum replaceable line size"));
+        assert_eq!(fs::read(&file).unwrap(), data);
+
+        let entries: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(entries, vec!["input.txt".to_string()]);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -27,11 +27,7 @@ mod stress_tests {
         let _ = fs::remove_file(path);
     }
 
-    fn make_result(
-        file: &str,
-        line_num: usize,
-        line_text: &str,
-    ) -> gref::model::SearchResult {
+    fn make_result(file: &str, line_num: usize, line_text: &str) -> gref::model::SearchResult {
         gref::model::SearchResult {
             file_path: file.to_string(),
             line_num,
@@ -71,18 +67,12 @@ mod stress_tests {
 
     #[test]
     fn cli_exclude_single_item_no_comma() {
-        assert_eq!(
-            gref::cli::parse_exclude_list("*.log"),
-            vec!["*.log"]
-        );
+        assert_eq!(gref::cli::parse_exclude_list("*.log"), vec!["*.log"]);
     }
 
     #[test]
     fn cli_exclude_trailing_comma() {
-        assert_eq!(
-            gref::cli::parse_exclude_list("a,b,"),
-            vec!["a", "b"]
-        );
+        assert_eq!(gref::cli::parse_exclude_list("a,b,"), vec!["a", "b"]);
     }
 
     #[test]
@@ -96,12 +86,7 @@ mod stress_tests {
     #[test]
     fn cli_parse_many_positionals_ignored() {
         // Extra positionals beyond [pattern, replacement, dir] are silently ignored
-        let args: Vec<String> = vec![
-            "pat".into(),
-            "rep".into(),
-            "dir".into(),
-            "extra".into(),
-        ];
+        let args: Vec<String> = vec!["pat".into(), "rep".into(), "dir".into(), "extra".into()];
         let cli = gref::cli::parse_from(&args);
         assert_eq!(cli.pattern, "pat");
         assert_eq!(cli.replacement, Some("rep".into()));
@@ -111,7 +96,8 @@ mod stress_tests {
     #[test]
     fn cli_parse_flags_any_order() {
         let args: Vec<String> = vec![
-            "-e".into(), ".git".into(),
+            "-e".into(),
+            ".git".into(),
             "pattern".into(),
             "-i".into(),
             "replacement".into(),
@@ -172,10 +158,7 @@ mod stress_tests {
     #[test]
     fn exclude_deeply_nested_exact_match() {
         let list = vec!["README.md".to_string()];
-        assert!(gref::exclude::is_excluded(
-            "/a/b/c/d/e/f/README.md",
-            &list
-        ));
+        assert!(gref::exclude::is_excluded("/a/b/c/d/e/f/README.md", &list));
     }
 
     // =====================================================================
@@ -302,10 +285,7 @@ mod stress_tests {
     #[test]
     fn search_prefix_long_literal() {
         let long = "a".repeat(1000);
-        assert_eq!(
-            gref::search::extract_longest_literal(&long),
-            Some(long)
-        );
+        assert_eq!(gref::search::extract_longest_literal(&long), Some(long));
     }
 
     #[test]
@@ -320,7 +300,10 @@ mod stress_tests {
     #[test]
     fn search_prefix_trailing_backslash() {
         // Trailing backslash with no following char: escaped flag stays set, loop ends
-        assert_eq!(gref::search::extract_longest_literal("abc\\"), Some("abc".to_string()));
+        assert_eq!(
+            gref::search::extract_longest_literal("abc\\"),
+            Some("abc".to_string())
+        );
     }
 
     // =====================================================================
@@ -330,7 +313,8 @@ mod stress_tests {
     #[test]
     fn search_nonexistent_path() {
         let re = Regex::new("foo").unwrap();
-        let result = gref::search::perform_search_adaptive("/nonexistent_dir", &re, &[], false, false);
+        let result =
+            gref::search::perform_search_adaptive("/nonexistent_dir", &re, &[], false, false);
         assert!(result.is_err());
     }
 
@@ -339,14 +323,9 @@ mod stress_tests {
         let dir = std::env::temp_dir().join("gref_stress_empty_dir");
         let _ = fs::create_dir(&dir);
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert!(results.is_empty());
         let _ = fs::remove_dir(&dir);
     }
@@ -361,14 +340,9 @@ mod stress_tests {
             .collect();
         fs::write(dir.join("big.txt"), &content).unwrap();
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert_eq!(results.len(), 10_000);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -381,14 +355,9 @@ mod stress_tests {
         fs::write(git.join("config.txt"), b"foo match").unwrap();
         fs::write(dir.join("src.txt"), b"foo match").unwrap();
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         // Only the top-level file, not .git/config.txt
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("src.txt"));
@@ -401,14 +370,9 @@ mod stress_tests {
         let _ = fs::create_dir_all(&dir);
         fs::write(dir.join("uni.txt"), "日本語 föö 中文\nföö again\n").unwrap();
         let re = Regex::new("föö").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert_eq!(results.len(), 2);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -501,13 +465,25 @@ mod stress_tests {
     }
 
     #[test]
+    fn replace_very_long_line_with_capture_expansion() {
+        let line = "x".repeat(100_000) + "foo" + &"y".repeat(100_000);
+        let content = format!("{}\n", line);
+        let file = write_tmp("gref_stress_longline_capture.txt", content.as_bytes());
+        let results = [make_result(&file, 1, &line)];
+        let refs: Vec<&_> = results.iter().collect();
+        let re = Regex::new("(foo)").unwrap();
+        gref::replace::replace_in_file(&file, &refs, &re, "$0").unwrap();
+        let out = fs::read_to_string(&file).unwrap();
+        assert_eq!(out, content);
+        cleanup(&file);
+    }
+
+    #[test]
     fn replace_many_lines() {
         // 5000-line file, replace every line
         let content: String = (0..5000).map(|_| "foo\n").collect();
         let file = write_tmp("gref_stress_manylines.txt", content.as_bytes());
-        let results: Vec<_> = (1..=5000)
-            .map(|ln| make_result(&file, ln, "foo"))
-            .collect();
+        let results: Vec<_> = (1..=5000).map(|ln| make_result(&file, ln, "foo")).collect();
         let refs: Vec<&_> = results.iter().collect();
         let re = Regex::new("foo").unwrap();
         gref::replace::replace_in_file(&file, &refs, &re, "bar").unwrap();
@@ -543,10 +519,7 @@ mod stress_tests {
     fn replace_perform_replacements_disjoint_files() {
         let f1 = write_tmp("gref_stress_prd1.txt", b"foo\n");
         let f2 = write_tmp("gref_stress_prd2.txt", b"foo\n");
-        let results = [
-            make_result(&f1, 1, "foo"),
-            make_result(&f2, 1, "foo"),
-        ];
+        let results = [make_result(&f1, 1, "foo"), make_result(&f2, 1, "foo")];
         let mut selected = HashSet::new();
         selected.insert(0);
         selected.insert(1);
@@ -880,10 +853,7 @@ mod stress_tests {
 
     #[test]
     fn app_cursor_cannot_exceed_results() {
-        let results = vec![
-            make_result("a.rs", 1, "foo"),
-            make_result("a.rs", 2, "foo"),
-        ];
+        let results = vec![make_result("a.rs", 1, "foo"), make_result("a.rs", 2, "foo")];
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.cursor = 1;
         simulate_browse_key(&mut m, gref::term::Key::Down);
@@ -892,9 +862,7 @@ mod stress_tests {
 
     #[test]
     fn app_cursor_scrolls_page() {
-        let results: Vec<_> = (1..=50)
-            .map(|i| make_result("a.rs", i, "foo"))
-            .collect();
+        let results: Vec<_> = (1..=50).map(|i| make_result("a.rs", i, "foo")).collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 5;
         // Move down 10 times
@@ -1044,14 +1012,9 @@ mod stress_tests {
         fs::write(dir.join("data.txt"), "no match here\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
 
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("code.rs"));
@@ -1075,14 +1038,9 @@ mod stress_tests {
         fs::write(dir.join("mixed.txt"), "Foo\nfOO\nFOO\nfoo\n").unwrap();
 
         let re = Regex::new("(?i)foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert_eq!(results.len(), 4);
 
         let _ = fs::remove_dir_all(&dir);
@@ -1127,14 +1085,9 @@ mod stress_tests {
 
         let re = Regex::new("foo").unwrap();
         // skip_hidden=true, use_gitignore=false
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            true,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], true, false)
+                .unwrap();
         // Only visible.txt — hidden dir and hidden file are skipped
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("visible.txt"));
@@ -1153,14 +1106,9 @@ mod stress_tests {
 
         let re = Regex::new("foo").unwrap();
         // skip_hidden=false → include hidden
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert_eq!(results.len(), 3);
 
         let _ = fs::remove_dir_all(&dir);
@@ -1180,14 +1128,9 @@ mod stress_tests {
         let re = Regex::new("foo").unwrap();
         // skip_hidden=false (so .gitignore file itself isn't skipped by hidden logic),
         // use_gitignore=true
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         // Only main.txt — debug.log and build/ are gitignored
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
@@ -1205,14 +1148,9 @@ mod stress_tests {
         fs::write(dir.join("main.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         // main.txt + important.log (negated), but not debug.log
         assert_eq!(results.len(), 2);
         let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
@@ -1235,14 +1173,9 @@ mod stress_tests {
         fs::write(sub.join("code.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         // code.txt always, keep.log (negated in sub), not root.log, not other.log
         assert_eq!(results.len(), 2);
         let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
@@ -1269,14 +1202,9 @@ mod stress_tests {
         fs::write(vendor_cache.join("secret.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
 
@@ -1292,14 +1220,9 @@ mod stress_tests {
         fs::write(project.join("target.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            project.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(project.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("target.txt"));
 
@@ -1317,14 +1240,9 @@ mod stress_tests {
         fs::write(sub.join("main.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            sub.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(sub.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
 
@@ -1342,14 +1260,9 @@ mod stress_tests {
         fs::write(sensitive.join("secret.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let err = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap_err();
+        let err =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap_err();
         assert!(err.contains("ignore file exceeds"));
 
         let _ = fs::remove_dir_all(&dir);
@@ -1365,14 +1278,9 @@ mod stress_tests {
 
         let re = Regex::new("foo").unwrap();
         // use_gitignore=false → .gitignore is not respected
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         assert_eq!(results.len(), 2);
 
         let _ = fs::remove_dir_all(&dir);
@@ -1390,14 +1298,9 @@ mod stress_tests {
 
         let re = Regex::new("foo").unwrap();
         // skip_hidden=true AND use_gitignore=true (default behavior)
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            true,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], true, true)
+                .unwrap();
         // Only main.txt — .secret is hidden, cache.tmp is gitignored
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
@@ -1418,14 +1321,9 @@ mod stress_tests {
         fs::write(dir.join("cache.tmp"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
 
@@ -1441,14 +1339,9 @@ mod stress_tests {
         fs::write(dir.join("data.dat"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("main.txt"));
 
@@ -1467,14 +1360,9 @@ mod stress_tests {
         fs::write(dir.join("main.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         // main.txt + important.log (negated by .grefignore), but not debug.log
         assert_eq!(results.len(), 2);
         let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
@@ -1493,14 +1381,9 @@ mod stress_tests {
         fs::write(dir.join("text.zzz"), b"foo bar\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            false,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
         // Only text.zzz — data.zzz has null byte → binary
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("text.zzz"));
@@ -1521,14 +1404,9 @@ mod stress_tests {
         fs::write(sub.join("code.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
-        let results = gref::search::perform_search_adaptive(
-            dir.to_str().unwrap(),
-            &re,
-            &[],
-            false,
-            true,
-        )
-        .unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, true)
+                .unwrap();
         // code.txt always, keep.log (negated in sub), not root.log, not other.log
         assert_eq!(results.len(), 2);
         let names: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
@@ -1538,4 +1416,3 @@ mod stress_tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
-
