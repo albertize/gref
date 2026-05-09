@@ -61,7 +61,7 @@ gref [options] <pattern> [replacement] [directory]
 - `-h`, `--help` : Show help message and exit
 - `-i`, `--ignore-case` : Ignore case in pattern matching
 - `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
-- `--hidden` : Include hidden files and directories
+- `--hidden` : Include hidden files and directories (default outside Git repo roots)
 - `--no-ignore` : Don't respect `.gitignore`, `.ignore`, and `.grefignore` files
 
 ### Arguments

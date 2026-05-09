@@ -1114,6 +1114,64 @@ mod stress_tests {
     }
 
     #[test]
+    fn search_default_includes_hidden_dirs_in_git_repo_root() {
+        let dir = std::env::temp_dir().join("gref_stress_git_hidden_default");
+        let _ = fs::remove_dir_all(&dir);
+        let github = dir.join(".github");
+        let git = dir.join(".git");
+        let _ = fs::create_dir_all(&github);
+        let _ = fs::create_dir_all(&git);
+        fs::write(dir.join("visible.txt"), "foo\n").unwrap();
+        fs::write(github.join("workflow.yml"), "foo\n").unwrap();
+        fs::write(git.join("config"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let skip_hidden = gref::search::default_skip_hidden(dir.to_str().unwrap(), false);
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            skip_hidden,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
+        assert!(names.iter().any(|n| n.contains("visible.txt")));
+        assert!(names.iter().any(|n| n.contains(".github")));
+        assert!(!names.iter().any(|n| n.contains(".git/config")));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_default_skips_hidden_dirs_outside_git_repo_root() {
+        let dir = std::env::temp_dir().join("gref_stress_hidden_default_nonrepo");
+        let _ = fs::remove_dir_all(&dir);
+        let hidden = dir.join(".hidden_dir");
+        let _ = fs::create_dir_all(&hidden);
+        fs::write(dir.join("visible.txt"), "foo\n").unwrap();
+        fs::write(hidden.join("secret.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let skip_hidden = gref::search::default_skip_hidden(dir.to_str().unwrap(), false);
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            skip_hidden,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file_path.contains("visible.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn search_respects_gitignore() {
         let dir = std::env::temp_dir().join("gref_stress_gitignore");
         let _ = fs::create_dir_all(&dir);
@@ -1214,13 +1272,16 @@ mod stress_tests {
     fn search_gitignore_does_not_load_ancestors_outside_repo() {
         let parent = std::env::temp_dir().join("gref_stress_gi_outside_repo");
         let project = parent.join("project");
-        let _ = fs::create_dir_all(&project);
+        let sub = project.join("sub");
+        let _ = fs::remove_dir_all(&parent);
+        let _ = fs::create_dir_all(project.join(".git"));
+        let _ = fs::create_dir_all(&sub);
         fs::write(parent.join(".gitignore"), "*.txt\n").unwrap();
-        fs::write(project.join("target.txt"), "foo\n").unwrap();
+        fs::write(sub.join("target.txt"), "foo\n").unwrap();
 
         let re = Regex::new("foo").unwrap();
         let results =
-            gref::search::perform_search_adaptive(project.to_str().unwrap(), &re, &[], false, true)
+            gref::search::perform_search_adaptive(sub.to_str().unwrap(), &re, &[], false, true)
                 .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("target.txt"));

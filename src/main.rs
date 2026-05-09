@@ -32,7 +32,7 @@ fn main() {
         &args.root_path,
         &pattern,
         &args.exclude,
-        !args.hidden,
+        search::default_skip_hidden(&args.root_path, args.hidden),
         !args.no_ignore,
     ) {
         Ok(r) => r,

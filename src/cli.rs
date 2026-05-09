@@ -20,7 +20,7 @@ Options:
   -h, --help          Show this help message and exit
   -i, --ignore-case   Ignore case in pattern matching
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
-  --hidden            Include hidden files and directories (default: skip)
+  --hidden            Include hidden files and directories (default: skip outside Git repo roots)
   --no-ignore         Don't respect .gitignore files
 
 Arguments:

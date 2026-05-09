@@ -547,11 +547,14 @@ mod tests {
     fn test_load_ancestor_gitignores_requires_repo_boundary() {
         let parent = std::env::temp_dir().join("gref_test_gi_no_repo_boundary");
         let project = parent.join("project");
-        let _ = fs::create_dir_all(&project);
+        let sub = project.join("sub");
+        let _ = fs::remove_dir_all(&parent);
+        let _ = fs::create_dir_all(project.join(".git"));
+        let _ = fs::create_dir_all(&sub);
         fs::write(parent.join(".gitignore"), "*.txt\n").unwrap();
 
-        let gi = load_ancestor_gitignores(&project).unwrap();
-        assert!(!gi.is_ignored(&project.join("target.txt"), false));
+        let gi = load_ancestor_gitignores(&sub).unwrap();
+        assert!(!gi.is_ignored(&sub.join("target.txt"), false));
 
         let _ = fs::remove_dir_all(&parent);
     }

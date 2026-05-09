@@ -289,6 +289,17 @@ const SKIP_DIRS: &[&str] = &[
     "venv",
 ];
 
+/// Resolve the default hidden-file skipping behavior for a search root.
+///
+/// Hidden files are skipped by default outside Git repo roots. When the search
+/// root contains a `.git` directory, hidden files and directories are included
+/// by default so repo metadata such as `.github/` is searchable without
+/// requiring `--hidden`. The `.git` directory itself is still skipped by
+/// `SKIP_DIRS`.
+pub fn default_skip_hidden(root_path: &str, include_hidden: bool) -> bool {
+    !include_hidden && !Path::new(root_path).join(".git").is_dir()
+}
+
 /// Check if a directory entry has the Windows hidden file attribute.
 #[cfg(windows)]
 fn is_hidden_windows(entry: &std::fs::DirEntry) -> bool {

@@ -80,20 +80,14 @@ fn handle_browse_key(model: &mut Model, key: Key) {
         Key::CtrlC | Key::Char('q') => {
             model.state = AppState::Done;
         }
-        Key::Up | Key::Char('k') => {
-            if model.cursor > 0 {
-                model.cursor -= 1;
-            }
+        Key::Up | Key::Char('k') if model.cursor > 0 => {
+            model.cursor -= 1;
         }
-        Key::Down | Key::Char('j') => {
-            if model.cursor < model.results.len().saturating_sub(1) {
-                model.cursor += 1;
-            }
+        Key::Down | Key::Char('j') if model.cursor < model.results.len().saturating_sub(1) => {
+            model.cursor += 1;
         }
-        Key::Left | Key::Char('h') => {
-            if model.horizontal_offset > 0 {
-                model.horizontal_offset = model.horizontal_offset.saturating_sub(10);
-            }
+        Key::Left | Key::Char('h') if model.horizontal_offset > 0 => {
+            model.horizontal_offset = model.horizontal_offset.saturating_sub(10);
         }
         Key::Right | Key::Char('l') => {
             let available_width = model.screen_width.saturating_sub(20).max(1);
@@ -115,34 +109,26 @@ fn handle_browse_key(model: &mut Model, key: Key) {
         Key::End => {
             model.horizontal_offset = 1000;
         }
-        Key::Space => {
-            if model.mode != AppMode::SearchOnly {
-                if model.selected.contains(&model.cursor) {
-                    model.selected.remove(&model.cursor);
-                } else {
-                    model.selected.insert(model.cursor);
-                }
+        Key::Space if model.mode != AppMode::SearchOnly => {
+            if model.selected.contains(&model.cursor) {
+                model.selected.remove(&model.cursor);
+            } else {
+                model.selected.insert(model.cursor);
             }
         }
-        Key::Char('a') => {
-            if model.mode != AppMode::SearchOnly {
-                for i in 0..model.results.len() {
-                    model.selected.insert(i);
-                }
+        Key::Char('a') if model.mode != AppMode::SearchOnly => {
+            for i in 0..model.results.len() {
+                model.selected.insert(i);
             }
         }
-        Key::Char('n') => {
-            if model.mode != AppMode::SearchOnly {
-                model.selected.clear();
-            }
+        Key::Char('n') if model.mode != AppMode::SearchOnly => {
+            model.selected.clear();
         }
-        Key::Enter => {
-            if model.mode != AppMode::SearchOnly {
-                if model.selected.is_empty() {
-                    model.error = Some("no results".to_string());
-                } else {
-                    model.state = AppState::Confirming;
-                }
+        Key::Enter if model.mode != AppMode::SearchOnly => {
+            if model.selected.is_empty() {
+                model.error = Some("no results".to_string());
+            } else {
+                model.state = AppState::Confirming;
             }
         }
         _ => {}
