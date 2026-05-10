@@ -9,6 +9,8 @@ pub struct CliArgs {
     pub show_help: bool,
     pub hidden: bool,
     pub no_ignore: bool,
+    pub vim_result: Option<String>,
+    pub root_override: Option<String>,
 }
 
 const HELP_TEXT: &str = r#"gref - search and replace tool
@@ -22,6 +24,8 @@ Options:
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
   --hidden            Include hidden files and directories (default: skip outside Git repo roots)
   --no-ignore         Don't respect .gitignore files
+  --vim-result FILE   Write selected search result for Vim integration
+  --root PATH         Search this file or directory
 
 Arguments:
   <pattern>         Regex pattern to search for
@@ -48,6 +52,8 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
     let mut show_help = false;
     let mut hidden = false;
     let mut no_ignore = false;
+    let mut vim_result = None;
+    let mut root_override = None;
     let mut exclude_str = String::new();
     let mut positional: Vec<String> = Vec::new();
 
@@ -59,6 +65,24 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
             "-i" | "--ignore-case" => ignore_case = true,
             "--hidden" => hidden = true,
             "--no-ignore" => no_ignore = true,
+            "--vim-result" => {
+                i += 1;
+                if i < raw.len() {
+                    vim_result = Some(raw[i].clone());
+                } else {
+                    eprintln!("Error: --vim-result requires a value");
+                    std::process::exit(1);
+                }
+            }
+            "--root" => {
+                i += 1;
+                if i < raw.len() {
+                    root_override = Some(raw[i].clone());
+                } else {
+                    eprintln!("Error: --root requires a value");
+                    std::process::exit(1);
+                }
+            }
             "-e" | "--exclude" => {
                 i += 1;
                 if i < raw.len() {
@@ -90,9 +114,9 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
 
     let pattern = positional[0].clone();
     let replacement = positional.get(1).cloned();
-    let root_path = positional
-        .get(2)
-        .cloned()
+    let root_path = root_override
+        .clone()
+        .or_else(|| positional.get(2).cloned())
         .unwrap_or_else(|| ".".to_string());
 
     let exclude = if exclude_str.is_empty() {
@@ -110,6 +134,8 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         show_help,
         hidden,
         no_ignore,
+        vim_result,
+        root_override,
     }
 }
 
@@ -171,5 +197,28 @@ mod tests {
         assert_eq!(cli.exclude, vec![".git", "*.log"]);
         assert_eq!(cli.pattern, "foo");
         assert_eq!(cli.replacement, Some("bar".into()));
+    }
+
+    #[test]
+    fn test_parse_from_with_vim_result() {
+        let args: Vec<String> = vec![
+            "--vim-result".into(),
+            "/tmp/gref-result".into(),
+            "foo".into(),
+        ];
+        let cli = parse_from(&args);
+        assert_eq!(cli.pattern, "foo");
+        assert!(cli.replacement.is_none());
+        assert_eq!(cli.vim_result, Some("/tmp/gref-result".into()));
+    }
+
+    #[test]
+    fn test_parse_from_with_root_override() {
+        let args: Vec<String> = vec!["--root".into(), "src/main.rs".into(), "foo".into()];
+        let cli = parse_from(&args);
+        assert_eq!(cli.pattern, "foo");
+        assert!(cli.replacement.is_none());
+        assert_eq!(cli.root_path, "src/main.rs");
+        assert_eq!(cli.root_override, Some("src/main.rs".into()));
     }
 }

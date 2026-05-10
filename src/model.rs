@@ -155,6 +155,9 @@ pub struct Model {
     pub state: AppState,
     pub error: Option<String>,
     pub horizontal_offset: usize,
+    pub select_result_on_enter: bool,
+    pub selected_result: Option<usize>,
+    pub terminal_released: bool,
 }
 
 impl Model {
@@ -179,6 +182,9 @@ impl Model {
             state: AppState::Browse,
             error: None,
             horizontal_offset: 0,
+            select_result_on_enter: false,
+            selected_result: None,
+            terminal_released: false,
         }
     }
 }

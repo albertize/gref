@@ -271,6 +271,41 @@ fn search_file(
     Ok(results)
 }
 
+fn search_single_file(
+    path: &Path,
+    pattern: &BytesRegex,
+    finder: Option<&memmem::Finder>,
+    budget: &SearchBudget,
+) -> Result<Vec<SearchResult>, String> {
+    if let Some(false) = filedetect::classify_by_extension(path) {
+        return Ok(Vec::new());
+    }
+
+    let size = match fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(e) => return Err(format!("failed to stat {}: {}", path.display(), e)),
+    };
+    if size > MAX_FILE_SIZE {
+        return Ok(Vec::new());
+    }
+
+    let reserved_bytes = match usize::try_from(size) {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let _file_budget = budget.acquire_file_bytes(reserved_bytes)?;
+
+    let content =
+        fs::read(path).map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
+    if filedetect::is_binary_content(&content) {
+        return Ok(Vec::new());
+    }
+
+    let path = Arc::new(path.to_path_buf());
+    let display_path = SearchResult::display_path_for(path.as_path());
+    search_file(path, display_path, &content, pattern, finder, budget)
+}
+
 /// Directories to always skip during walk (sorted for binary search).
 const SKIP_DIRS: &[&str] = &[
     ".cache",
@@ -444,6 +479,11 @@ pub fn perform_search_adaptive(
     let finder: Option<memmem::Finder<'static>> =
         literal.map(|s| memmem::Finder::new(s.as_bytes()).into_owned());
 
+    if root.is_file() {
+        let budget = SearchBudget::new(MAX_IN_FLIGHT_FILE_BYTES, MAX_TOTAL_RESULT_BYTES);
+        return search_single_file(root, &bytes_pattern, finder.as_ref(), &budget);
+    }
+
     let num_workers = thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
@@ -589,6 +629,15 @@ pub fn perform_search_adaptive(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("gref_test_{}_{}", name, nanos))
+    }
 
     #[test]
     fn test_extract_longest_literal_plain() {
@@ -638,5 +687,21 @@ mod tests {
             extract_longest_literal("abc.*defghij"),
             Some("defghij".to_string())
         );
+    }
+
+    #[test]
+    fn perform_search_accepts_single_file_root() {
+        let file = unique_path("single_file_root.rs");
+        fs::write(&file, b"one\nneedle\nthree\n").unwrap();
+        let pattern = Regex::new("needle").unwrap();
+
+        let results =
+            perform_search_adaptive(file.to_str().unwrap(), &pattern, &[], true, false).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line_num, 2);
+        assert_eq!(results[0].path(), file.as_path());
+
+        let _ = fs::remove_file(file);
     }
 }

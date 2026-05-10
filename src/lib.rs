@@ -3,6 +3,7 @@ pub mod cli;
 pub mod exclude;
 pub mod filedetect;
 pub mod gitignore;
+pub mod integration;
 pub mod model;
 pub mod replace;
 pub mod search;

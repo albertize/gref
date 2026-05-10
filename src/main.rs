@@ -1,10 +1,13 @@
 use gref::app;
 use gref::cli;
+use gref::integration;
 use gref::model;
 use gref::search;
+use std::path::Path;
 
 fn main() {
     let args = cli::parse();
+    let vim_result = args.vim_result.clone();
 
     // Compile regex
     let pattern_str = if args.ignore_case {
@@ -55,9 +58,23 @@ fn main() {
         pattern,
         mode,
     );
+    m.select_result_on_enter = vim_result.is_some() && mode == model::AppMode::SearchOnly;
+
+    if let Some(path) = vim_result.as_deref() {
+        let _ = std::fs::remove_file(path);
+    }
 
     if let Err(e) = app::run(&mut m) {
         eprintln!("Error running the program: {}", e);
         std::process::exit(1);
+    }
+
+    if let (Some(path), Some(idx)) = (vim_result.as_deref(), m.selected_result) {
+        if let Some(result) = m.results.get(idx) {
+            if let Err(e) = integration::write_vim_result(Path::new(path), result) {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }

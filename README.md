@@ -63,6 +63,8 @@ gref [options] <pattern> [replacement] [directory]
 - `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
 - `--hidden` : Include hidden files and directories (default outside Git repo roots)
 - `--no-ignore` : Don't respect `.gitignore`, `.ignore`, and `.grefignore` files
+- `--root PATH` : Search this file or directory
+- `--vim-result FILE` : Write the selected search result for Vim integration
 
 ### Arguments
 
@@ -79,7 +81,42 @@ gref -i Foo           # Case-insensitive search for 'Foo'
 gref -e .git,*.log    # Exclude .git folders and .log files
 gref --hidden foo     # Include hidden files in search
 gref --no-ignore foo  # Ignore .gitignore rules
+gref --root src foo    # Search a specific file or directory via option
 gref --help           # Show help message
+```
+
+### Vim Integration
+
+`gref` ships a minimal Vim runtime integration that uses Vim's built-in popup terminal API. No plugin manager is required.
+
+Install manually:
+
+```sh
+mkdir -p ~/.vim/plugin ~/.vim/autoload
+cp contrib/vim/plugin/gref.vim ~/.vim/plugin/gref.vim
+cp contrib/vim/autoload/gref.vim ~/.vim/autoload/gref.vim
+```
+
+Then in Vim:
+
+```vim
+:Gref foo          " search current Vim working directory, Enter jumps to result
+:Gref foo bar      " replace across current Vim working directory
+:GrefBuffer foo    " search only the current file
+:GrefBuffer foo bar
+```
+
+Replace commands refuse to run while affected Vim buffers have unsaved changes. After replacements, Vim runs `:checktime` so changed files can be reloaded.
+
+Optional popup styling:
+
+```vim
+let g:gref_popup_width_percent = 85
+let g:gref_popup_height_percent = 80
+let g:gref_popup_title = ''
+let g:gref_popup_padding = [0, 0, 0, 0]
+let g:gref_popup_border = []
+let g:gref_popup_borderchars = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
 ```
 
 ---
@@ -91,10 +128,11 @@ gref --help           # Show help message
 | `↑`/`↓` or `j`/`k` | Move cursor up/down |
 | `←`/`→` or `h`/`l` | Scroll horizontally |
 | `Home`/`End` | Scroll to start/end of line |
+| `v` | Open current result in `$VISUAL`, `$EDITOR`, or `vim` |
 | `Space` | Select/deselect a result for replacement |
 | `a` | Select all results |
 | `n` | Deselect all results |
-| `Enter` | Confirm selected replacements |
+| `Enter` | Confirm selected replacements; in Vim search integration, open current result |
 | `Esc` | Cancel confirmation |
 | `q` / `Ctrl+C` | Exit |
 
@@ -116,6 +154,7 @@ src/
   exclude.rs       Path exclusion (dir/, *.ext, exact filename)
   filedetect.rs    Text vs binary detection (extension lookup + SIMD null-byte scan)
   gitignore.rs     .gitignore/.ignore/.grefignore parsing, glob→regex, hierarchical merging
+  integration.rs   Vim result-file writer for editor integration
 tests/
   stress_tests.rs  98 edge-case and stress tests across all modules
 ```

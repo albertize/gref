@@ -236,8 +236,21 @@ fn render_footer(model: &Model) -> String {
                 model.results.len()
             )));
             s.push_str(&term::style_grey(
-                "\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line \nSpace: select/deselect | a: select all | n: deselect all",
+                "\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line | v: open in $EDITOR",
             ));
+            match model.mode {
+                AppMode::SearchOnly if model.select_result_on_enter => {
+                    s.push_str(&term::style_grey("\nEnter: open | q/Ctrl+C: exit"));
+                }
+                AppMode::SearchOnly => {
+                    s.push_str(&term::style_grey("\nq/Ctrl+C: exit"));
+                }
+                AppMode::Default => {
+                    s.push_str(&term::style_grey(
+                        "\nSpace: select/deselect | a: select all | n: deselect all",
+                    ));
+                }
+            }
         }
         AppState::Confirming => {
             s.push_str(&term::style_grey("Enter: confirm | Esc: exit"));

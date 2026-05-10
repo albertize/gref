@@ -16,6 +16,7 @@ replace.rs       → Atomic file replacement via temp file + rename
 term.rs          → Raw mode FFI (Windows kernel32 / Unix termios), ANSI escapes, Key enum, paint()
 ui.rs            → Screen rendering into a String (render() → term::paint())
 app.rs           → Event loop: read_key → dispatch → render cycle
+integration.rs   → Editor integration helpers (Vim result-file writer)
 exclude.rs       → Path exclusion (dir/, *.ext, exact filename patterns). Uses Cow for path normalization.
 filedetect.rs    → Text vs binary detection (64 text extensions + 512-byte content probe + SIMD null-byte scan)
 gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hierarchical rule merging, ancestor discovery
@@ -39,6 +40,7 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 - **Skip strategy**: Hidden files/dirs (name starts with `.`) are skipped by default outside Git repo roots. When the search root contains a `.git` directory, `search::default_skip_hidden()` includes hidden items by default so paths such as `.github/` are searchable; `.git` itself is still always skipped via `SKIP_DIRS`. `.gitignore`, `.ignore`, and `.grefignore` files are parsed and applied hierarchically — ancestor ignore files up to the repo root are loaded at walk start, per-directory ignore files are merged during walk via `merge_dir()`. `--hidden` includes hidden items, `--no-ignore` disables ignore-file parsing. See `gitignore.rs`.
 - **Zero-copy path filtering**: During directory walk, OsStr-based checks (hidden prefix, SKIP_DIRS binary search, gitignore basename match) run on `entry.file_name()` before `entry.path()` allocates the full PathBuf. Files that will be discarded never trigger path allocation.
 - **Deferred binary detection**: Known extensions are classified without I/O. Files with unknown extensions are dispatched to workers and binary-checked via SIMD-accelerated `memchr(0, ...)` on the first 512 bytes of the already-loaded buffer — no separate file open.
+- **Vim integration**: `--vim-result <file>` enables search-only `Enter` selection for Vim popup hosting. `main.rs` writes the selected result after the TUI exits via `integration::write_vim_result()` using `line\npath` bytes. Vim runtime files live in `contrib/vim/` and use built-in `term_start()` + `popup_create()` only.
 - **Avoid allocations in hot paths**: `exclude.rs` uses `Cow` for path normalization (only allocates on Windows when backslashes present). `filedetect.rs` uses `String::with_capacity` + `push` instead of `format!`. `ui.rs` uses `str::match_indices()` instead of compiling a regex per render frame.
 
 ## Build & Test
@@ -64,6 +66,7 @@ cargo clippy                   # must pass with 0 warnings
 - `walk_and_dispatch`: Uses `entry.file_type()` from `read_dir` (avoids redundant stat syscalls vs `path.is_dir()`). Skips hidden entries when `skip_hidden=true`; CLI callers derive this via `search::default_skip_hidden()`, which disables hidden skipping for roots containing `.git`. Loads `.gitignore`, `.ignore`, `.grefignore` per directory via `merge_dir()` and checks rules via `GitIgnore::is_ignored()`. Stack carries `Arc<GitIgnore>` — `Arc::clone` is O(1) when no ignore files found. OsStr-based checks run before `entry.path()` to avoid allocation for discarded entries.
 - `gitignore.rs`: Glob-to-regex conversion handles `*`, `**`, `?`, `[...]`, `\`. Basename-only matching (patterns with `/` in middle are skipped). Negation via `!`, dir-only via trailing `/`. `load_ancestor_gitignores()` walks up from root to repo root (`.git` dir) loading `.gitignore`, `.ignore`, `.grefignore` at each level. Hierarchical merging: parent rules first, child rules last (last match wins). Priority order: `.gitignore` < `.ignore` < `.grefignore`.
 - `search_file`: Unified search function — reads file into memory, whole-file literal reject via `memmem::Finder` (SIMD), whole-buffer `find_iter()`, SIMD line boundary detection via `memchr`/`memrchr`, incremental line counting via `memchr_iter`, dedup matches on same line
+- `perform_search_adaptive`: Accepts either a directory root or an explicit single-file root. Single-file roots reuse the same whole-buffer `search_file()` path and are used by `:GrefBuffer`.
 - `MAX_FILE_SIZE`: 256 MB — files larger than this are skipped entirely
 - `memmem::Finder` is pre-built once with `into_owned()` for `'static` lifetime, wrapped in `Arc` for thread sharing
 - No separate small/large file paths — single unified `search_file` for all file sizes

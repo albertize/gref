@@ -2,6 +2,7 @@ use crate::model::{AppMode, AppState, Model};
 use crate::replace;
 use crate::term::{self, Key};
 use crate::ui;
+use std::process::Command;
 
 /// Run the TUI event loop.
 pub fn run(model: &mut Model) -> Result<(), String> {
@@ -18,8 +19,10 @@ pub fn run(model: &mut Model) -> Result<(), String> {
 
     let result = event_loop(model);
 
-    term::leave_alt_screen();
-    term::disable_raw_mode();
+    if !model.terminal_released {
+        term::leave_alt_screen();
+        term::disable_raw_mode();
+    }
 
     result
 }
@@ -38,7 +41,7 @@ fn event_loop(model: &mut Model) -> Result<(), String> {
         // Read input
         if let Some(key) = term::read_key() {
             match model.state {
-                AppState::Browse => handle_browse_key(model, key),
+                AppState::Browse => handle_browse_key(model, key)?,
                 AppState::Confirming => handle_confirming_key(model, key),
                 AppState::Done | AppState::Replacing => {}
             }
@@ -75,7 +78,46 @@ fn event_loop(model: &mut Model) -> Result<(), String> {
     Ok(())
 }
 
-fn handle_browse_key(model: &mut Model, key: Key) {
+fn open_current_result_in_editor(model: &mut Model) -> Result<(), String> {
+    let Some(result) = model.results.get(model.cursor) else {
+        return Ok(());
+    };
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vim".to_string());
+
+    term::leave_alt_screen();
+    term::disable_raw_mode();
+
+    let status = Command::new(&editor)
+        .arg(format!("+{}", result.line_num))
+        .arg(result.path())
+        .status()
+        .map_err(|e| format!("failed to open editor '{}': {}", editor, e));
+
+    match status {
+        Ok(status) if status.success() => {
+            model.terminal_released = true;
+            model.state = AppState::Done;
+            Ok(())
+        }
+        Ok(status) => {
+            term::enable_raw_mode();
+            term::enter_alt_screen();
+            model.error = Some(format!("editor '{}' exited with status {}", editor, status));
+            Ok(())
+        }
+        Err(e) => {
+            term::enable_raw_mode();
+            term::enter_alt_screen();
+            model.error = Some(e);
+            Ok(())
+        }
+    }
+}
+
+fn handle_browse_key(model: &mut Model, key: Key) -> Result<(), String> {
     match key {
         Key::CtrlC | Key::Char('q') => {
             model.state = AppState::Done;
@@ -109,6 +151,9 @@ fn handle_browse_key(model: &mut Model, key: Key) {
         Key::End => {
             model.horizontal_offset = 1000;
         }
+        Key::Char('v') => {
+            open_current_result_in_editor(model)?;
+        }
         Key::Space if model.mode != AppMode::SearchOnly => {
             if model.selected.contains(&model.cursor) {
                 model.selected.remove(&model.cursor);
@@ -131,8 +176,13 @@ fn handle_browse_key(model: &mut Model, key: Key) {
                 model.state = AppState::Confirming;
             }
         }
+        Key::Enter if model.select_result_on_enter && !model.results.is_empty() => {
+            model.selected_result = Some(model.cursor);
+            model.state = AppState::Done;
+        }
         _ => {}
     }
+    Ok(())
 }
 
 fn handle_confirming_key(model: &mut Model, key: Key) {
@@ -148,5 +198,42 @@ fn handle_confirming_key(model: &mut Model, key: Key) {
             model.state = AppState::Done;
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::SearchResult;
+
+    fn model(mode: AppMode) -> Model {
+        Model::new(
+            vec![SearchResult::from_display_path("a.rs", 7, "foo")],
+            "foo".to_string(),
+            String::new(),
+            regex::Regex::new("foo").unwrap(),
+            mode,
+        )
+    }
+
+    #[test]
+    fn enter_in_search_only_selects_result_when_enabled() {
+        let mut model = model(AppMode::SearchOnly);
+        model.select_result_on_enter = true;
+
+        handle_browse_key(&mut model, Key::Enter).unwrap();
+
+        assert_eq!(model.selected_result, Some(0));
+        assert_eq!(model.state, AppState::Done);
+    }
+
+    #[test]
+    fn enter_in_search_only_stays_noop_without_integration() {
+        let mut model = model(AppMode::SearchOnly);
+
+        handle_browse_key(&mut model, Key::Enter).unwrap();
+
+        assert_eq!(model.selected_result, None);
+        assert_eq!(model.state, AppState::Browse);
     }
 }
