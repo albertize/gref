@@ -696,6 +696,22 @@ mod stress_tests {
     }
 
     #[test]
+    fn ui_render_restores_header_when_scrolling_back_to_first_result() {
+        let results: Vec<_> = (1..=20)
+            .map(|i| make_result("a.rs", i, "foo line"))
+            .collect();
+        let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
+        m.screen_height = 5;
+        m.cursor = 0;
+        m.topline = 1;
+
+        let output = gref::ui::render(&mut m);
+
+        assert_eq!(m.topline, 0);
+        assert!(output.contains("DIR: a.rs"));
+    }
+
+    #[test]
     fn ui_render_many_files() {
         // Results from many distinct files → many "DIR:" headers
         let results: Vec<_> = (0..50)

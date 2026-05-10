@@ -63,6 +63,14 @@ fn build_visible_lines(model: &Model) -> Vec<VisibleLine> {
     lines
 }
 
+fn header_topline_for_cursor(visible_lines: &[VisibleLine], cursor_line: usize) -> usize {
+    if cursor_line > 0 && visible_lines[cursor_line - 1].is_header {
+        cursor_line - 1
+    } else {
+        cursor_line
+    }
+}
+
 /// Render the complete screen content into a single String.
 pub fn render(model: &mut Model) -> String {
     let mut s = String::with_capacity(4096);
@@ -79,7 +87,9 @@ pub fn render(model: &mut Model) -> String {
             .unwrap_or(0);
 
         // Adjust topline so cursor is visible
-        if cursor_line < model.topline {
+        if model.screen_height > 1 && cursor_line <= model.topline {
+            model.topline = header_topline_for_cursor(&visible_lines, cursor_line);
+        } else if cursor_line < model.topline {
             model.topline = cursor_line;
         }
         if cursor_line >= model.topline + model.screen_height {
