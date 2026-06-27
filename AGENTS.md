@@ -42,7 +42,7 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 - **Skip strategy**: Hidden files/dirs (name starts with `.`) are skipped by default outside Git repo roots. When the search root contains a `.git` directory, `search::default_skip_hidden()` includes hidden items by default so paths such as `.github/` are searchable; `.git` itself is still always skipped via `SKIP_DIRS`. The walker also detects nested Git repo roots while descending from a non-repo parent and stops skipping hidden entries from that repo root downward. `.gitignore`, `.ignore`, and `.grefignore` files are parsed and applied hierarchically — ancestor ignore files up to the repo root are loaded at walk start, per-directory ignore files are merged during walk via `merge_dir()`. `--hidden` includes hidden items, `--no-ignore` disables ignore-file parsing. See `gitignore.rs`.
 - **Zero-copy path filtering**: During directory walk, OsStr-based checks (hidden prefix, SKIP_DIRS binary search, gitignore basename match) run on `entry.file_name()` before `entry.path()` allocates the full PathBuf. Files that will be discarded never trigger path allocation.
 - **Deferred binary detection**: Known extensions are classified without I/O. Files with unknown extensions are dispatched to workers and binary-checked via SIMD-accelerated `memchr(0, ...)` on the first 512 bytes of the already-loaded buffer — no separate file open.
-- **Vim integration**: `--vim-result <file>` enables search-only `Enter` selection for Vim popup hosting. `main.rs` writes the selected result after the TUI exits via `integration::write_vim_result()` using `line\npath` bytes. Vim runtime files live in `contrib/vim/` and use built-in `term_start()` + `popup_create()` only.
+- **Vim integration**: `--vim-result <file>` enables Vim popup hosting. `main.rs` writes a small atomic status protocol via `integration.rs`: `selected\nline\ncolumn\npath`, `none`, `error\nmessage`, `replaced`, or `cancelled`. Vim runtime files live in `contrib/vim/` and use built-in `term_start()` + `popup_create()` only. In Vim-hosted mode, `Enter` opens a selected search result and the `v` external-editor key is disabled.
 - **Avoid allocations in hot paths**: `exclude.rs` uses `Cow` for path normalization (only allocates on Windows when backslashes present). `filedetect.rs` uses `String::with_capacity` + `push` instead of `format!`. `ui.rs` uses `str::match_indices()` instead of compiling a regex per render frame.
 
 ## Build & Test
@@ -50,7 +50,7 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 ```bash
 cargo build                    # dev build
 cargo build --release          # release (strip=true, lto=true, opt-level=3)
-cargo test                     # 55 unit + 117 stress/edge-case tests
+cargo test                     # unit + stress/edge-case + Vim runtime tests
 cargo clippy                   # must pass with 0 warnings
 ```
 
@@ -58,6 +58,7 @@ cargo clippy                   # must pass with 0 warnings
 
 - **Unit tests**: Inline `#[cfg(test)] mod tests` in `cli.rs`, `exclude.rs`, `filedetect.rs`, `gitignore.rs`, `search.rs`, `replace.rs`
 - **Integration/stress tests**: `tests/stress_tests.rs` — uses `gref::` (lib) imports, covers all modules including UI rendering and key-handling simulation
+- **Vim runtime test**: `tests/vim_runtime_tests.rs` launches `vim -Nu NONE -n -es` to validate Vimscript parsing and result protocol; skips cleanly when `vim` is unavailable
 - Tests use `std::env::temp_dir()` for file I/O with `gref_stress_*` / `gref_test_*` prefixed filenames
 - `make_result(file, line_num, line_text)` helper creates `SearchResult` in tests (3 args, no match_text)
 

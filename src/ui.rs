@@ -255,8 +255,11 @@ fn render_footer(model: &Model) -> String {
                 model.results.len()
             )));
             s.push_str(&term::style_grey(
-                "\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line | v: open in $EDITOR",
+                "\nup/down /j/k: move | left/right /h/l: scroll horizontally | Home/End: scroll to start/end of line",
             ));
+            if model.editor_open_enabled {
+                s.push_str(&term::style_grey(" | v: open in $EDITOR"));
+            }
             match model.mode {
                 AppMode::SearchOnly if model.select_result_on_enter => {
                     s.push_str(&term::style_grey("\nEnter: open | q/Ctrl+C: exit"));

@@ -67,11 +67,18 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
     let mut regex = false;
     let mut exclude_str = String::new();
     let mut positional: Vec<String> = Vec::new();
+    let mut end_of_options = false;
 
     let mut i = 0;
     while i < raw.len() {
         let arg = &raw[i];
+        if end_of_options {
+            positional.push(arg.clone());
+            i += 1;
+            continue;
+        }
         match arg.as_str() {
+            "--" => end_of_options = true,
             "-h" | "--help" => show_help = true,
             "-v" | "--version" => {
                 println!("{}", version_text());
@@ -247,6 +254,13 @@ mod tests {
         let cli = parse_from(&args);
         assert!(cli.regex);
         assert_eq!(cli.pattern, "foo.*bar");
+    }
+
+    #[test]
+    fn test_parse_from_end_of_options() {
+        let args: Vec<String> = vec!["--".into(), "-foo".into()];
+        let cli = parse_from(&args);
+        assert_eq!(cli.pattern, "-foo");
     }
 
     #[test]

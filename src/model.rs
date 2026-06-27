@@ -159,6 +159,8 @@ pub struct Model {
     pub select_result_on_enter: bool,
     pub selected_result: Option<usize>,
     pub terminal_released: bool,
+    pub editor_open_enabled: bool,
+    pub replacement_performed: bool,
 }
 
 impl Model {
@@ -188,6 +190,8 @@ impl Model {
             select_result_on_enter: false,
             selected_result: None,
             terminal_released: false,
+            editor_open_enabled: true,
+            replacement_performed: false,
         }
     }
 }

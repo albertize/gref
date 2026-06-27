@@ -111,6 +111,8 @@ Then in Vim:
 :Gref foo bar      " replace across current Vim working directory
 :GrefBuffer foo    " search only the current file
 :GrefBuffer foo bar
+:Gref --regex --ignore-case 'foo\s+bar'
+:Gref --root src foo
 ```
 
 Replace commands refuse to run while affected Vim buffers have unsaved changes. After replacements, Vim runs `:checktime` so changed files can be reloaded.
@@ -124,6 +126,8 @@ let g:gref_popup_title = ''
 let g:gref_popup_padding = [0, 0, 0, 0]
 let g:gref_popup_border = []
 let g:gref_popup_borderchars = ['─', '│', '─', '│', '╭', '╮', '╯', '╰']
+let g:gref_default_args = []
+let g:gref_open_command = 'edit'
 ```
 
 ---
@@ -163,7 +167,8 @@ src/
   gitignore.rs     .gitignore/.ignore/.grefignore parsing, glob→regex, hierarchical merging
   integration.rs   Vim result-file writer for editor integration
 tests/
-  stress_tests.rs  117 edge-case and stress tests across all modules
+  stress_tests.rs  Edge-case and stress tests across all modules
+  vim_runtime_tests.rs  Vimscript runtime integration checks
 ```
 
 ---
@@ -187,7 +192,7 @@ tests/
 ```sh
 cargo build                    # Dev build
 cargo build --release          # Release (strip=true, lto=true, opt-level=3)
-cargo test                     # 55 unit + 117 stress/edge-case tests
+cargo test                     # Unit, stress/edge-case, and Vim runtime tests
 cargo clippy                   # Must pass with 0 warnings
 ```
 

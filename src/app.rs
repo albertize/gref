@@ -62,7 +62,10 @@ fn event_loop(model: &mut Model) -> Result<(), String> {
                 model.regex_mode,
             );
             match result {
-                Ok(()) => model.state = AppState::Done,
+                Ok(()) => {
+                    model.replacement_performed = true;
+                    model.state = AppState::Done;
+                }
                 Err(e) => {
                     model.error = Some(e);
                     model.state = AppState::Done;
@@ -152,7 +155,7 @@ fn handle_browse_key(model: &mut Model, key: Key) -> Result<(), String> {
         Key::End => {
             model.horizontal_offset = 1000;
         }
-        Key::Char('v') => {
+        Key::Char('v') if model.editor_open_enabled => {
             open_current_result_in_editor(model)?;
         }
         Key::Space if model.mode != AppMode::SearchOnly => {
