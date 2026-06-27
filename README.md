@@ -249,22 +249,6 @@ cargo test                     # Unit, stress/edge-case, and Vim runtime tests
 cargo clippy                   # Must pass with 0 warnings
 ```
 
-## Release Process
-
-Release tags must match `Cargo.toml` exactly. For example, tag `v2.2.0` requires:
-
-```toml
-version = "2.2.0"
-```
-
-The release workflow checks this before building assets. Prepare the version in the tagged commit, then push the tag:
-
-```sh
-git tag v2.2.0
-git push origin main
-git push origin v2.2.0
-```
-
 ## Contributing
 
 Contributions are welcome! Please submit issues or pull requests for bug fixes, features, or improvements.
