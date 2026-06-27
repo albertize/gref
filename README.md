@@ -6,7 +6,10 @@
 A fast, interactive search and replace tool for your terminal — built for speed. No TUI framework — raw ANSI escapes and platform FFI for maximum performance and minimal binary size.
 
 ---
-![GREF Demo](/media/DEMO-GREF.gif)
+
+![GREF terminal UI](/media/gref_base.png)
+
+![GREF Vim integration](/media/gref_vim.png)
 
 ## Features
 
