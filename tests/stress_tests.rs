@@ -832,19 +832,19 @@ mod stress_tests {
         let output = gref::ui::render(&mut m);
 
         assert_eq!(m.topline, 0);
-        assert!(output.contains("DIR: a.rs"));
+        assert!(output.contains("PATH: a.rs"));
     }
 
     #[test]
     fn ui_render_many_files() {
-        // Results from many distinct files → many "DIR:" headers
+        // Results from many distinct files -> many "PATH:" headers
         let results: Vec<_> = (0..50)
             .map(|i| make_result(&format!("dir/file_{}.rs", i), 1, "foo"))
             .collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 10;
         let output = gref::ui::render(&mut m);
-        assert!(output.contains("DIR:"));
+        assert!(output.contains("PATH:"));
     }
 
     #[test]

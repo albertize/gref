@@ -35,6 +35,10 @@ pub fn style_cyan_bold(text: &str) -> String {
     format!("{}{}{}{}", BOLD, fg_color(6), text, RESET)
 }
 
+pub fn style_blue_bold(text: &str) -> String {
+    format!("{}{}{}{}", BOLD, fg_color(12), text, RESET)
+}
+
 pub fn style_grey(text: &str) -> String {
     format!("{}{}{}", fg_color(240), text, RESET)
 }

@@ -136,11 +136,12 @@ pub fn render(model: &mut Model) -> String {
                 break;
             }
             if v.is_header {
-                let prefix_len = 5; // "DIR: "
+                let prefix_len = 6; // "PATH: "
                 let max_path = (model.screen_width - 1).saturating_sub(prefix_len);
                 let safe_file = sanitize_terminal_text(&v.file);
                 let truncated_file: String = safe_file.chars().take(max_path).collect();
-                s.push_str(&format!("DIR: {}\n", truncated_file));
+                s.push_str(&term::style_blue_bold(&format!("PATH: {}", truncated_file)));
+                s.push('\n');
             } else if let Some(idx) = v.idx {
                 let res = &model.results[idx];
                 let is_cursor = model.cursor == idx;
