@@ -50,23 +50,45 @@ jobs:
           key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ matrix.target }}-cargo-
 
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [ "$cargo_version" != "$version" ]; then
+            echo "tag version ($version) does not match Cargo.toml version ($cargo_version)" >&2
+            exit 1
+          fi
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          mkdir staging
-          cp "target/${{ matrix.target }}/release/gref" staging/
-          tar czf "${{ matrix.artifact }}.tar.gz" -C staging .
+          package="${{ matrix.artifact }}"
+          mkdir -p "staging/$package/bin" "staging/$package/vim/plugin" "staging/$package/vim/autoload"
+          cp "target/${{ matrix.target }}/release/gref" "staging/$package/bin/"
+          cp contrib/vim/plugin/gref.vim "staging/$package/vim/plugin/"
+          cp contrib/vim/autoload/gref.vim "staging/$package/vim/autoload/"
+          cp install.sh install.ps1 README.md LICENSE "staging/$package/"
+          chmod +x "staging/$package/bin/gref" "staging/$package/install.sh"
+          tar czf "${{ matrix.artifact }}.tar.gz" -C staging "$package"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path staging
-          Copy-Item "target/${{ matrix.target }}/release/gref.exe" -Destination staging/
-          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
+          $package = "${{ matrix.artifact }}"
+          New-Item -ItemType Directory -Path "staging/$package/bin" -Force
+          New-Item -ItemType Directory -Path "staging/$package/vim/plugin" -Force
+          New-Item -ItemType Directory -Path "staging/$package/vim/autoload" -Force
+          Copy-Item "target/${{ matrix.target }}/release/gref.exe" -Destination "staging/$package/bin/"
+          Copy-Item "contrib/vim/plugin/gref.vim" -Destination "staging/$package/vim/plugin/"
+          Copy-Item "contrib/vim/autoload/gref.vim" -Destination "staging/$package/vim/autoload/"
+          Copy-Item "install.sh", "install.ps1", "README.md", "LICENSE" -Destination "staging/$package/"
+          Compress-Archive -Path "staging/$package" -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -87,6 +109,11 @@ jobs:
         with:
           path: dist/
           merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -25,15 +25,63 @@ A fast, interactive search and replace tool for your terminal — built for spee
 
 ## Install
 
-### Download pre-built binaries
+### Install script
 
-Go to [Releases](https://github.com/albertize/gref/releases) and download the binary for your platform:
+```sh
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh
+```
+
+Install a specific release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --version v2.2.0
+```
+
+Useful options:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --no-vim
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --vim-pack
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --prefix /usr/local
+```
+
+The installer downloads the matching release asset, verifies it with `SHA256SUMS`, installs `gref`, and installs the Vim runtime by default. Default user-local paths are `~/.local/bin/gref` and `~/.vim/`.
+
+Inspectable install:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/albertize/gref/main/install.sh
+less install.sh
+sh install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/albertize/gref/main/install.ps1 | iex
+```
+
+### Download release archives
+
+Go to [Releases](https://github.com/albertize/gref/releases) and download the archive for your platform:
 
 | OS | amd64 | arm64 |
 |---|---|---|
-| Linux | `gref-linux-amd64` | `gref-linux-arm64` |
-| macOS | `gref-darwin-amd64` | `gref-darwin-arm64` |
-| Windows | `gref-windows-amd64` | `gref-windows-arm64` |
+| Linux | `gref-linux-amd64.tar.gz` | `gref-linux-arm64.tar.gz` |
+| macOS | `gref-darwin-amd64.tar.gz` | `gref-darwin-arm64.tar.gz` |
+| Windows | `gref-windows-amd64.zip` | `gref-windows-arm64.zip` |
+
+Release archives include:
+
+```text
+bin/gref
+vim/plugin/gref.vim
+vim/autoload/gref.vim
+install.sh
+install.ps1
+README.md
+LICENSE
+```
 
 ### Build from source
 
@@ -169,6 +217,8 @@ src/
 tests/
   stress_tests.rs  Edge-case and stress tests across all modules
   vim_runtime_tests.rs  Vimscript runtime integration checks
+install.sh         Unix bootstrap/release-archive installer
+install.ps1        Windows PowerShell bootstrap/release-archive installer
 ```
 
 ---
@@ -194,6 +244,22 @@ cargo build                    # Dev build
 cargo build --release          # Release (strip=true, lto=true, opt-level=3)
 cargo test                     # Unit, stress/edge-case, and Vim runtime tests
 cargo clippy                   # Must pass with 0 warnings
+```
+
+## Release Process
+
+Release tags must match `Cargo.toml` exactly. For example, tag `v2.2.0` requires:
+
+```toml
+version = "2.2.0"
+```
+
+The release workflow checks this before building assets. Prepare the version in the tagged commit, then push the tag:
+
+```sh
+git tag v2.2.0
+git push origin main
+git push origin v2.2.0
 ```
 
 ## Contributing
