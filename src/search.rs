@@ -318,7 +318,8 @@ const SKIP_DIRS: &[&str] = &[
 /// root contains a `.git` directory, hidden files and directories are included
 /// by default so repo metadata such as `.github/` is searchable without
 /// requiring `--hidden`. The `.git` directory itself is still skipped by
-/// `SKIP_DIRS`.
+/// `SKIP_DIRS`. During directory walking, nested Git repo roots get the same
+/// treatment even when the original search root is outside the repo.
 pub fn default_skip_hidden(root_path: &str, include_hidden: bool) -> bool {
     !include_hidden && !Path::new(root_path).join(".git").is_dir()
 }
@@ -332,6 +333,10 @@ fn is_hidden_windows(entry: &std::fs::DirEntry) -> bool {
         .metadata()
         .map(|m| m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
         .unwrap_or(false)
+}
+
+fn is_git_repo_root(path: &Path) -> bool {
+    path.join(".git").is_dir()
 }
 
 /// Recursively walk the directory tree, dispatching files to the job channel.
@@ -364,9 +369,11 @@ fn walk_and_dispatch(
         Arc::new(GitIgnore::empty())
     };
 
-    let mut stack: Vec<(PathBuf, Arc<GitIgnore>)> = vec![(root.to_path_buf(), initial_ignore)];
+    let root_is_git_repo = is_git_repo_root(root);
+    let mut stack: Vec<(PathBuf, Arc<GitIgnore>, bool)> =
+        vec![(root.to_path_buf(), initial_ignore, root_is_git_repo)];
 
-    while let Some((dir, inherited_ignore)) = stack.pop() {
+    while let Some((dir, inherited_ignore, in_git_repo)) = stack.pop() {
         if stop.load(Ordering::Relaxed) {
             return Ok(());
         }
@@ -384,12 +391,13 @@ fn walk_and_dispatch(
             // --- Phase 1: OsStr-only checks (no path allocation) ---
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
+            let should_skip_hidden = skip_hidden && !in_git_repo;
 
-            if skip_hidden && name_str.starts_with('.') {
+            if should_skip_hidden && name_str.starts_with('.') {
                 continue;
             }
             #[cfg(windows)]
-            if skip_hidden && is_hidden_windows(&entry) {
+            if should_skip_hidden && is_hidden_windows(&entry) {
                 continue;
             }
 
@@ -406,13 +414,14 @@ fn walk_and_dispatch(
                 if inherited_ignore.is_ignored(&path, true) {
                     continue;
                 }
+                let child_in_git_repo = in_git_repo || is_git_repo_root(&path);
                 // Load ignore files from this child directory
                 let child_ignore = if use_gitignore {
                     Arc::new(inherited_ignore.merge_dir(&path)?)
                 } else {
                     inherited_ignore.clone()
                 };
-                stack.push((path, child_ignore));
+                stack.push((path, child_ignore, child_in_git_repo));
             } else if ft.is_file() {
                 let path = entry.path();
                 if inherited_ignore.is_ignored(&path, false) {
