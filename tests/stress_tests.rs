@@ -7,6 +7,7 @@ mod stress_tests {
     use std::collections::HashSet;
     use std::fs;
     use std::path::Path;
+    use std::process::Command;
 
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
@@ -47,6 +48,24 @@ mod stress_tests {
             replacement.to_string(),
             re,
             mode,
+            true,
+        )
+    }
+
+    fn new_literal_model(
+        results: Vec<gref::model::SearchResult>,
+        pattern: &str,
+        replacement: &str,
+        mode: gref::model::AppMode,
+    ) -> gref::model::Model {
+        let re = gref::search::compile_search_pattern(pattern, false, false).unwrap();
+        gref::model::Model::new(
+            results,
+            pattern.to_string(),
+            replacement.to_string(),
+            re,
+            mode,
+            false,
         )
     }
 
@@ -106,6 +125,21 @@ mod stress_tests {
         assert_eq!(cli.exclude, vec![".git"]);
         assert_eq!(cli.pattern, "pattern");
         assert_eq!(cli.replacement, Some("replacement".into()));
+    }
+
+    #[test]
+    fn cli_version_flag_prints_package_version() {
+        let output = Command::new(env!("CARGO_BIN_EXE_gref"))
+            .arg("--version")
+            .output()
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("gref {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(output.stderr.is_empty());
     }
 
     // =====================================================================
@@ -330,6 +364,41 @@ mod stress_tests {
     }
 
     #[test]
+    fn search_default_pattern_is_literal() {
+        let dir = std::env::temp_dir().join("gref_stress_literal_default");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("versions.txt"), "literal 1.2.0\nregex-ish 1x2x0\n").unwrap();
+
+        let re = gref::search::compile_search_pattern("1.2.0", false, false).unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].line_text.contains("literal 1.2.0"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_regex_flag_enables_regex_pattern() {
+        let dir = std::env::temp_dir().join("gref_stress_regex_flag");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("versions.txt"), "literal 1.2.0\nregex-ish 1x2x0\n").unwrap();
+
+        let re = gref::search::compile_search_pattern("1.2.0", false, true).unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn search_file_with_many_matches() {
         let dir = std::env::temp_dir().join("gref_stress_many");
         let _ = fs::create_dir_all(&dir);
@@ -478,6 +547,19 @@ mod stress_tests {
     }
 
     #[test]
+    fn replace_literal_mode_does_not_expand_dollar_captures() {
+        let file = write_tmp("gref_stress_literal_dollar.txt", b"foo\n");
+        let results = [make_result(&file, 1, "foo")];
+        let refs: Vec<&_> = results.iter().collect();
+        let re = gref::search::compile_search_pattern("foo", false, false).unwrap();
+
+        gref::replace::replace_in_file_with_options(&file, &refs, &re, "$1", false).unwrap();
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), "$1\n");
+        cleanup(&file);
+    }
+
+    #[test]
     fn replace_many_lines() {
         // 5000-line file, replace every line
         let content: String = (0..5000).map(|_| "foo\n").collect();
@@ -581,6 +663,7 @@ mod stress_tests {
     fn model_new_search_only() {
         let m = new_model(vec![], "foo", "", gref::model::AppMode::SearchOnly);
         assert_eq!(m.mode, gref::model::AppMode::SearchOnly);
+        assert!(m.regex_mode);
     }
 
     // =====================================================================
@@ -601,6 +684,47 @@ mod stress_tests {
         let output = gref::ui::render(&mut m);
         assert!(output.contains("file.rs"));
         assert!(output.contains("1:"));
+    }
+
+    #[test]
+    fn ui_render_highlights_regex_match_not_literal_pattern() {
+        let results = vec![make_result(
+            "theme.go",
+            1,
+            r#""surface-0": "oklch(12% 0.01 250)""#,
+        )];
+        let mut m = new_model(results, "1.2.0", "", gref::model::AppMode::SearchOnly);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[38;5;9m1 250\x1b[0m"));
+    }
+
+    #[test]
+    fn ui_render_selected_regex_replacement_expands_captures() {
+        let results = vec![make_result("payments.json", 1, r#""id":"pay_1001""#)];
+        let mut m = new_model(
+            results,
+            r"(pay)_(\d+)",
+            "$2:$1",
+            gref::model::AppMode::Default,
+        );
+        m.selected.insert(0);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[1m\x1b[38;5;6m1001:pay\x1b[0m"));
+    }
+
+    #[test]
+    fn ui_render_selected_literal_replacement_does_not_expand_captures() {
+        let results = vec![make_result("a.txt", 1, "foo")];
+        let mut m = new_literal_model(results, "foo", "$1", gref::model::AppMode::Default);
+        m.selected.insert(0);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[1m\x1b[38;5;6m$1\x1b[0m"));
     }
 
     #[test]
@@ -708,19 +832,19 @@ mod stress_tests {
         let output = gref::ui::render(&mut m);
 
         assert_eq!(m.topline, 0);
-        assert!(output.contains("DIR: a.rs"));
+        assert!(output.contains("PATH: a.rs"));
     }
 
     #[test]
     fn ui_render_many_files() {
-        // Results from many distinct files → many "DIR:" headers
+        // Results from many distinct files -> many "PATH:" headers
         let results: Vec<_> = (0..50)
             .map(|i| make_result(&format!("dir/file_{}.rs", i), 1, "foo"))
             .collect();
         let mut m = new_model(results, "foo", "bar", gref::model::AppMode::Default);
         m.screen_height = 10;
         let output = gref::ui::render(&mut m);
-        assert!(output.contains("DIR:"));
+        assert!(output.contains("PATH:"));
     }
 
     #[test]
@@ -1183,6 +1307,42 @@ mod stress_tests {
 
         assert_eq!(results.len(), 1);
         assert!(results[0].file_path.contains("visible.txt"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_default_includes_hidden_dirs_in_nested_git_repo() {
+        let dir = std::env::temp_dir().join("gref_stress_nested_git_hidden_default");
+        let repo = dir.join("level1/repo");
+        let github = repo.join(".github");
+        let hidden_outside_repo = dir.join(".outside");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::create_dir_all(repo.join(".git"));
+        let _ = fs::create_dir_all(&github);
+        let _ = fs::create_dir_all(&hidden_outside_repo);
+        fs::write(repo.join("visible.txt"), "foo\n").unwrap();
+        fs::write(github.join("workflow.yml"), "foo\n").unwrap();
+        fs::write(repo.join(".git/config"), "foo\n").unwrap();
+        fs::write(hidden_outside_repo.join("secret.txt"), "foo\n").unwrap();
+
+        let re = Regex::new("foo").unwrap();
+        let skip_hidden = gref::search::default_skip_hidden(dir.to_str().unwrap(), false);
+        let results = gref::search::perform_search_adaptive(
+            dir.to_str().unwrap(),
+            &re,
+            &[],
+            skip_hidden,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.file_path.as_ref()).collect();
+        assert!(names.iter().any(|n| n.contains("visible.txt")));
+        assert!(names.iter().any(|n| n.contains(".github")));
+        assert!(!names.iter().any(|n| n.contains(".git/config")));
+        assert!(!names.iter().any(|n| n.contains(".outside")));
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -54,11 +54,12 @@ fn event_loop(model: &mut Model) -> Result<(), String> {
 
         if model.state == AppState::Replacing {
             // Perform replacement synchronously
-            let result = replace::perform_replacements(
+            let result = replace::perform_replacements_with_options(
                 &model.results,
                 &model.selected,
                 &model.pattern,
                 &model.replacement_str,
+                model.regex_mode,
             );
             match result {
                 Ok(()) => model.state = AppState::Done,
@@ -213,6 +214,7 @@ mod tests {
             String::new(),
             regex::Regex::new("foo").unwrap(),
             mode,
+            false,
         )
     }
 

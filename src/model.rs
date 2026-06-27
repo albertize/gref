@@ -151,6 +151,7 @@ pub struct Model {
     pub pattern: Regex,
     pub pattern_str: String,
     pub replacement_str: String,
+    pub regex_mode: bool,
     pub mode: AppMode,
     pub state: AppState,
     pub error: Option<String>,
@@ -167,6 +168,7 @@ impl Model {
         replacement_str: String,
         pattern: Regex,
         mode: AppMode,
+        regex_mode: bool,
     ) -> Self {
         Model {
             results,
@@ -178,6 +180,7 @@ impl Model {
             pattern,
             pattern_str,
             replacement_str,
+            regex_mode,
             mode,
             state: AppState::Browse,
             error: None,

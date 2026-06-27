@@ -11,6 +11,7 @@ pub struct CliArgs {
     pub no_ignore: bool,
     pub vim_result: Option<String>,
     pub root_override: Option<String>,
+    pub regex: bool,
 }
 
 const HELP_TEXT: &str = r#"gref - search and replace tool
@@ -20,7 +21,9 @@ Usage:
 
 Options:
   -h, --help          Show this help message and exit
+  -v, --version       Show version information and exit
   -i, --ignore-case   Ignore case in pattern matching
+  -r, --regex         Treat <pattern> as a regular expression (default: literal text)
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
   --hidden            Include hidden files and directories (default: skip outside Git repo roots)
   --no-ignore         Don't respect .gitignore files
@@ -28,17 +31,24 @@ Options:
   --root PATH         Search this file or directory
 
 Arguments:
-  <pattern>         Regex pattern to search for
+  <pattern>         Literal text to search for, unless --regex is used
   [replacement]     Replacement string (if omitted, only search)
   [directory]       Directory to search (default: current directory)
 
 Examples:
   gref foo bar src      Replace 'foo' with 'bar' in src directory
   gref foo              Search for 'foo' only
+  gref -r 'foo.*bar'    Search with a regular expression
   gref -i Foo           Search for 'Foo' (case-insensitive)
+  gref --version        Show version information
   gref --help           Show help message
   gref -e .git,*.log    Exclude .git folders and .log files
 "#;
+
+/// Return the package version display string.
+pub fn version_text() -> String {
+    format!("gref {}", env!("CARGO_PKG_VERSION"))
+}
 
 /// Parse command-line arguments from `std::env::args()`.
 pub fn parse() -> CliArgs {
@@ -54,6 +64,7 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
     let mut no_ignore = false;
     let mut vim_result = None;
     let mut root_override = None;
+    let mut regex = false;
     let mut exclude_str = String::new();
     let mut positional: Vec<String> = Vec::new();
 
@@ -62,7 +73,12 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         let arg = &raw[i];
         match arg.as_str() {
             "-h" | "--help" => show_help = true,
+            "-v" | "--version" => {
+                println!("{}", version_text());
+                std::process::exit(0);
+            }
             "-i" | "--ignore-case" => ignore_case = true,
+            "-r" | "--regex" => regex = true,
             "--hidden" => hidden = true,
             "--no-ignore" => no_ignore = true,
             "--vim-result" => {
@@ -136,6 +152,7 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         no_ignore,
         vim_result,
         root_override,
+        regex,
     }
 }
 
@@ -171,6 +188,7 @@ mod tests {
         assert_eq!(cli.replacement, Some("bar".into()));
         assert_eq!(cli.root_path, "src");
         assert!(!cli.ignore_case);
+        assert!(!cli.regex);
         assert!(cli.exclude.is_empty());
     }
 
@@ -181,6 +199,7 @@ mod tests {
         assert_eq!(cli.pattern, "foo");
         assert!(cli.replacement.is_none());
         assert_eq!(cli.root_path, ".");
+        assert!(!cli.regex);
     }
 
     #[test]
@@ -220,5 +239,29 @@ mod tests {
         assert!(cli.replacement.is_none());
         assert_eq!(cli.root_path, "src/main.rs");
         assert_eq!(cli.root_override, Some("src/main.rs".into()));
+    }
+
+    #[test]
+    fn test_parse_from_regex_flag() {
+        let args: Vec<String> = vec!["--regex".into(), "foo.*bar".into()];
+        let cli = parse_from(&args);
+        assert!(cli.regex);
+        assert_eq!(cli.pattern, "foo.*bar");
+    }
+
+    #[test]
+    fn test_parse_from_short_regex_flag() {
+        let args: Vec<String> = vec!["-r".into(), "foo.*bar".into()];
+        let cli = parse_from(&args);
+        assert!(cli.regex);
+        assert_eq!(cli.pattern, "foo.*bar");
+    }
+
+    #[test]
+    fn test_version_text_uses_package_version() {
+        assert_eq!(
+            version_text(),
+            format!("gref {}", env!("CARGO_PKG_VERSION"))
+        );
     }
 }

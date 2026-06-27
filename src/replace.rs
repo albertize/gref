@@ -145,10 +145,11 @@ fn write_replaced_line<W: Write>(
     line: &[u8],
     pattern: &BytesRegex,
     replacement: &[u8],
+    expand_captures: bool,
 ) -> io::Result<()> {
     let mut last_end = 0usize;
 
-    if replacement.contains(&b'$') {
+    if expand_captures && replacement.contains(&b'$') {
         for caps in pattern.captures_iter(line) {
             let Some(m) = caps.get(0) else {
                 continue;
@@ -175,6 +176,17 @@ pub fn perform_replacements(
     pattern: &Regex,
     replacement: &str,
 ) -> Result<(), String> {
+    perform_replacements_with_options(all_results, selected, pattern, replacement, true)
+}
+
+/// Perform replacements with explicit replacement expansion control.
+pub fn perform_replacements_with_options(
+    all_results: &[SearchResult],
+    selected: &HashSet<usize>,
+    pattern: &Regex,
+    replacement: &str,
+    expand_captures: bool,
+) -> Result<(), String> {
     let bytes_pattern = compile_bytes_pattern(pattern)?;
 
     // Group selected results by file path
@@ -186,8 +198,14 @@ pub fn perform_replacements(
     }
 
     for (file_path, results) in &files_to_process {
-        replace_in_path_bytes(file_path, results, &bytes_pattern, replacement.as_bytes())
-            .map_err(|e| format!("replacement failed for {}: {}", file_path.display(), e))?;
+        replace_in_path_bytes(
+            file_path,
+            results,
+            &bytes_pattern,
+            replacement.as_bytes(),
+            expand_captures,
+        )
+        .map_err(|e| format!("replacement failed for {}: {}", file_path.display(), e))?;
     }
 
     Ok(())
@@ -200,12 +218,24 @@ pub fn replace_in_file(
     pattern: &Regex,
     replacement: &str,
 ) -> Result<(), String> {
+    replace_in_file_with_options(file_path, results, pattern, replacement, true)
+}
+
+/// Replace matched lines in a single file with explicit replacement expansion control.
+pub fn replace_in_file_with_options(
+    file_path: &str,
+    results: &[&SearchResult],
+    pattern: &Regex,
+    replacement: &str,
+    expand_captures: bool,
+) -> Result<(), String> {
     let bytes_pattern = compile_bytes_pattern(pattern)?;
     replace_in_path_bytes(
         Path::new(file_path),
         results,
         &bytes_pattern,
         replacement.as_bytes(),
+        expand_captures,
     )
 }
 
@@ -214,12 +244,14 @@ fn replace_in_path_bytes(
     results: &[&SearchResult],
     pattern: &BytesRegex,
     replacement: &[u8],
+    expand_captures: bool,
 ) -> Result<(), String> {
     replace_in_path_bytes_with_limit(
         file_path,
         results,
         pattern,
         replacement,
+        expand_captures,
         MAX_REPLACE_LINE_BYTES,
     )
 }
@@ -229,6 +261,7 @@ fn replace_in_path_bytes_with_limit(
     results: &[&SearchResult],
     pattern: &BytesRegex,
     replacement: &[u8],
+    expand_captures: bool,
     max_line_bytes: usize,
 ) -> Result<(), String> {
     let lines_to_replace: HashSet<usize> = results.iter().map(|r| r.line_num).collect();
@@ -272,11 +305,17 @@ fn replace_in_path_bytes_with_limit(
                             .inspect_err(|_| {
                                 let _ = fs::remove_file(&tmp);
                             })?;
-                            write_replaced_line(&mut writer, &selected_line, pattern, replacement)
-                                .map_err(|e| {
-                                    let _ = fs::remove_file(&tmp);
-                                    format!("error writing to temp file: {}", e)
-                                })?;
+                            write_replaced_line(
+                                &mut writer,
+                                &selected_line,
+                                pattern,
+                                replacement,
+                                expand_captures,
+                            )
+                            .map_err(|e| {
+                                let _ = fs::remove_file(&tmp);
+                                format!("error writing to temp file: {}", e)
+                            })?;
                             selected_line.clear();
                         } else {
                             writer.write_all(chunk).map_err(|e| {
@@ -322,7 +361,14 @@ fn replace_in_path_bytes_with_limit(
     }
 
     if current_line_selected && !selected_line.is_empty() {
-        write_replaced_line(&mut writer, &selected_line, pattern, replacement).map_err(|e| {
+        write_replaced_line(
+            &mut writer,
+            &selected_line,
+            pattern,
+            replacement,
+            expand_captures,
+        )
+        .map_err(|e| {
             let _ = fs::remove_file(&tmp);
             format!("error writing to temp file: {}", e)
         })?;
@@ -579,9 +625,15 @@ mod tests {
         let refs: Vec<&SearchResult> = results.iter().collect();
         let pattern = compile_bytes_pattern(&Regex::new("foo").unwrap()).unwrap();
 
-        let err =
-            replace_in_path_bytes_with_limit(Path::new(&file_str), &refs, &pattern, b"bar", 4)
-                .unwrap_err();
+        let err = replace_in_path_bytes_with_limit(
+            Path::new(&file_str),
+            &refs,
+            &pattern,
+            b"bar",
+            true,
+            4,
+        )
+        .unwrap_err();
 
         assert!(err.contains("maximum replaceable line size"));
         assert_eq!(fs::read(&file).unwrap(), data);

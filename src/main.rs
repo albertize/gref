@@ -9,16 +9,11 @@ fn main() {
     let args = cli::parse();
     let vim_result = args.vim_result.clone();
 
-    // Compile regex
-    let pattern_str = if args.ignore_case {
-        format!("(?i){}", args.pattern)
-    } else {
-        args.pattern.clone()
-    };
-    let pattern = match regex::Regex::new(&pattern_str) {
+    let pattern = match search::compile_search_pattern(&args.pattern, args.ignore_case, args.regex)
+    {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Error compiling regex pattern: {}", e);
+            eprintln!("Error compiling search pattern: {}", e);
             std::process::exit(1);
         }
     };
@@ -57,6 +52,7 @@ fn main() {
         args.replacement.unwrap_or_default(),
         pattern,
         mode,
+        args.regex,
     );
     m.select_result_on_enter = vim_result.is_some() && mode == model::AppMode::SearchOnly;
 
