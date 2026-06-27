@@ -43,6 +43,39 @@ fn sanitize_terminal_text(text: &str) -> String {
     out
 }
 
+fn render_matched_line(out: &mut String, text: &str, model: &Model, is_selected: bool) {
+    let mut last_index = 0;
+
+    if is_selected {
+        for caps in model.pattern.captures_iter(text) {
+            let Some(matched) = caps.get(0) else {
+                continue;
+            };
+            out.push_str(&text[last_index..matched.start()]);
+
+            let replacement = if model.regex_mode {
+                let mut replacement = String::new();
+                caps.expand(&model.replacement_str, &mut replacement);
+                replacement
+            } else {
+                model.replacement_str.clone()
+            };
+            out.push_str(&term::style_cyan_bold(&sanitize_terminal_text(
+                &replacement,
+            )));
+            last_index = matched.end();
+        }
+    } else {
+        for matched in model.pattern.find_iter(text) {
+            out.push_str(&text[last_index..matched.start()]);
+            out.push_str(&term::style_red(matched.as_str()));
+            last_index = matched.end();
+        }
+    }
+
+    out.push_str(&text[last_index..]);
+}
+
 /// Build the list of visible lines (file headers interleaved with results).
 fn build_visible_lines(model: &Model) -> Vec<VisibleLine> {
     let mut lines = Vec::with_capacity(model.results.len() * 2);
@@ -150,22 +183,7 @@ pub fn render(model: &mut Model) -> String {
                 // Build the styled line text with match highlighting
                 s.push_str(&format!("{}{} {}: ", cursor_str, checked_str, res.line_num));
 
-                let mut last_index = 0;
-                for (start, matched) in truncated.match_indices(&model.pattern_str) {
-                    // Text before the match
-                    s.push_str(&truncated[last_index..start]);
-
-                    if is_selected {
-                        s.push_str(&term::style_cyan_bold(&sanitize_terminal_text(
-                            &model.replacement_str,
-                        )));
-                    } else {
-                        s.push_str(&term::style_red(matched));
-                    }
-                    last_index = start + matched.len();
-                }
-                // Remaining text after last match
-                s.push_str(&truncated[last_index..]);
+                render_matched_line(&mut s, truncated, model, is_selected);
                 s.push('\n');
             }
         }

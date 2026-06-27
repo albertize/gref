@@ -9,6 +9,7 @@ pub struct CliArgs {
     pub show_help: bool,
     pub hidden: bool,
     pub no_ignore: bool,
+    pub regex: bool,
 }
 
 const HELP_TEXT: &str = r#"gref - search and replace tool
@@ -19,18 +20,20 @@ Usage:
 Options:
   -h, --help          Show this help message and exit
   -i, --ignore-case   Ignore case in pattern matching
+  -r, --regex         Treat <pattern> as a regular expression (default: literal text)
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
   --hidden            Include hidden files and directories (default: skip outside Git repo roots)
   --no-ignore         Don't respect .gitignore files
 
 Arguments:
-  <pattern>         Regex pattern to search for
+  <pattern>         Literal text to search for, unless --regex is used
   [replacement]     Replacement string (if omitted, only search)
   [directory]       Directory to search (default: current directory)
 
 Examples:
   gref foo bar src      Replace 'foo' with 'bar' in src directory
   gref foo              Search for 'foo' only
+  gref -r 'foo.*bar'    Search with a regular expression
   gref -i Foo           Search for 'Foo' (case-insensitive)
   gref --help           Show help message
   gref -e .git,*.log    Exclude .git folders and .log files
@@ -48,6 +51,7 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
     let mut show_help = false;
     let mut hidden = false;
     let mut no_ignore = false;
+    let mut regex = false;
     let mut exclude_str = String::new();
     let mut positional: Vec<String> = Vec::new();
 
@@ -57,6 +61,7 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         match arg.as_str() {
             "-h" | "--help" => show_help = true,
             "-i" | "--ignore-case" => ignore_case = true,
+            "-r" | "--regex" => regex = true,
             "--hidden" => hidden = true,
             "--no-ignore" => no_ignore = true,
             "-e" | "--exclude" => {
@@ -110,6 +115,7 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         show_help,
         hidden,
         no_ignore,
+        regex,
     }
 }
 
@@ -145,6 +151,7 @@ mod tests {
         assert_eq!(cli.replacement, Some("bar".into()));
         assert_eq!(cli.root_path, "src");
         assert!(!cli.ignore_case);
+        assert!(!cli.regex);
         assert!(cli.exclude.is_empty());
     }
 
@@ -155,6 +162,7 @@ mod tests {
         assert_eq!(cli.pattern, "foo");
         assert!(cli.replacement.is_none());
         assert_eq!(cli.root_path, ".");
+        assert!(!cli.regex);
     }
 
     #[test]
@@ -171,5 +179,21 @@ mod tests {
         assert_eq!(cli.exclude, vec![".git", "*.log"]);
         assert_eq!(cli.pattern, "foo");
         assert_eq!(cli.replacement, Some("bar".into()));
+    }
+
+    #[test]
+    fn test_parse_from_regex_flag() {
+        let args: Vec<String> = vec!["--regex".into(), "foo.*bar".into()];
+        let cli = parse_from(&args);
+        assert!(cli.regex);
+        assert_eq!(cli.pattern, "foo.*bar");
+    }
+
+    #[test]
+    fn test_parse_from_short_regex_flag() {
+        let args: Vec<String> = vec!["-r".into(), "foo.*bar".into()];
+        let cli = parse_from(&args);
+        assert!(cli.regex);
+        assert_eq!(cli.pattern, "foo.*bar");
     }
 }

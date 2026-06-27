@@ -47,6 +47,24 @@ mod stress_tests {
             replacement.to_string(),
             re,
             mode,
+            true,
+        )
+    }
+
+    fn new_literal_model(
+        results: Vec<gref::model::SearchResult>,
+        pattern: &str,
+        replacement: &str,
+        mode: gref::model::AppMode,
+    ) -> gref::model::Model {
+        let re = gref::search::compile_search_pattern(pattern, false, false).unwrap();
+        gref::model::Model::new(
+            results,
+            pattern.to_string(),
+            replacement.to_string(),
+            re,
+            mode,
+            false,
         )
     }
 
@@ -330,6 +348,41 @@ mod stress_tests {
     }
 
     #[test]
+    fn search_default_pattern_is_literal() {
+        let dir = std::env::temp_dir().join("gref_stress_literal_default");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("versions.txt"), "literal 1.2.0\nregex-ish 1x2x0\n").unwrap();
+
+        let re = gref::search::compile_search_pattern("1.2.0", false, false).unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].line_text.contains("literal 1.2.0"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_regex_flag_enables_regex_pattern() {
+        let dir = std::env::temp_dir().join("gref_stress_regex_flag");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("versions.txt"), "literal 1.2.0\nregex-ish 1x2x0\n").unwrap();
+
+        let re = gref::search::compile_search_pattern("1.2.0", false, true).unwrap();
+        let results =
+            gref::search::perform_search_adaptive(dir.to_str().unwrap(), &re, &[], false, false)
+                .unwrap();
+
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn search_file_with_many_matches() {
         let dir = std::env::temp_dir().join("gref_stress_many");
         let _ = fs::create_dir_all(&dir);
@@ -478,6 +531,19 @@ mod stress_tests {
     }
 
     #[test]
+    fn replace_literal_mode_does_not_expand_dollar_captures() {
+        let file = write_tmp("gref_stress_literal_dollar.txt", b"foo\n");
+        let results = [make_result(&file, 1, "foo")];
+        let refs: Vec<&_> = results.iter().collect();
+        let re = gref::search::compile_search_pattern("foo", false, false).unwrap();
+
+        gref::replace::replace_in_file_with_options(&file, &refs, &re, "$1", false).unwrap();
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), "$1\n");
+        cleanup(&file);
+    }
+
+    #[test]
     fn replace_many_lines() {
         // 5000-line file, replace every line
         let content: String = (0..5000).map(|_| "foo\n").collect();
@@ -581,6 +647,7 @@ mod stress_tests {
     fn model_new_search_only() {
         let m = new_model(vec![], "foo", "", gref::model::AppMode::SearchOnly);
         assert_eq!(m.mode, gref::model::AppMode::SearchOnly);
+        assert!(m.regex_mode);
     }
 
     // =====================================================================
@@ -601,6 +668,47 @@ mod stress_tests {
         let output = gref::ui::render(&mut m);
         assert!(output.contains("file.rs"));
         assert!(output.contains("1:"));
+    }
+
+    #[test]
+    fn ui_render_highlights_regex_match_not_literal_pattern() {
+        let results = vec![make_result(
+            "theme.go",
+            1,
+            r#""surface-0": "oklch(12% 0.01 250)""#,
+        )];
+        let mut m = new_model(results, "1.2.0", "", gref::model::AppMode::SearchOnly);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[38;5;9m1 250\x1b[0m"));
+    }
+
+    #[test]
+    fn ui_render_selected_regex_replacement_expands_captures() {
+        let results = vec![make_result("payments.json", 1, r#""id":"pay_1001""#)];
+        let mut m = new_model(
+            results,
+            r"(pay)_(\d+)",
+            "$2:$1",
+            gref::model::AppMode::Default,
+        );
+        m.selected.insert(0);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[1m\x1b[38;5;6m1001:pay\x1b[0m"));
+    }
+
+    #[test]
+    fn ui_render_selected_literal_replacement_does_not_expand_captures() {
+        let results = vec![make_result("a.txt", 1, "foo")];
+        let mut m = new_literal_model(results, "foo", "$1", gref::model::AppMode::Default);
+        m.selected.insert(0);
+
+        let output = gref::ui::render(&mut m);
+
+        assert!(output.contains("\x1b[1m\x1b[38;5;6m$1\x1b[0m"));
     }
 
     #[test]

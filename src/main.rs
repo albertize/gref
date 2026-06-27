@@ -6,16 +6,11 @@ use gref::search;
 fn main() {
     let args = cli::parse();
 
-    // Compile regex
-    let pattern_str = if args.ignore_case {
-        format!("(?i){}", args.pattern)
-    } else {
-        args.pattern.clone()
-    };
-    let pattern = match regex::Regex::new(&pattern_str) {
+    let pattern = match search::compile_search_pattern(&args.pattern, args.ignore_case, args.regex)
+    {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Error compiling regex pattern: {}", e);
+            eprintln!("Error compiling search pattern: {}", e);
             std::process::exit(1);
         }
     };
@@ -54,6 +49,7 @@ fn main() {
         args.replacement.unwrap_or_default(),
         pattern,
         mode,
+        args.regex,
     );
 
     if let Err(e) = app::run(&mut m) {

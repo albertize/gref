@@ -10,7 +10,7 @@ A fast, interactive search and replace tool for your terminal — built for spee
 
 ## Features
 
-- 🚀 **Buffered search engine**: whole-buffer regex matching with SIMD-accelerated literal pre-filtering (`memchr::memmem`)
+- 🚀 **Buffered search engine**: literal-by-default search on top of whole-buffer regex matching with SIMD-accelerated literal pre-filtering (`memchr::memmem`)
 - 🖥️ **Interactive TUI** for previewing and selecting replacements
 - 🧠 **Smart selection**: choose lines to replace, bulk select/deselect
 - 🛡️ **Atomic file writes** for safe replacements (temp file + rename)
@@ -60,21 +60,26 @@ gref [options] <pattern> [replacement] [directory]
 
 - `-h`, `--help` : Show help message and exit
 - `-i`, `--ignore-case` : Ignore case in pattern matching
+- `-r`, `--regex` : Treat `<pattern>` as a regular expression (default: literal text)
 - `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
 - `--hidden` : Include hidden files and directories (default outside Git repo roots)
 - `--no-ignore` : Don't respect `.gitignore`, `.ignore`, and `.grefignore` files
 
 ### Arguments
 
-- `<pattern>`: Regex pattern to search for
+- `<pattern>`: Literal text to search for, unless `--regex` is used
 - `[replacement]`: Replacement string (if omitted, search-only mode)
 - `[directory]`: Directory to search (default: current directory)
+
+In default literal mode, replacement text is written literally. Capture expansion such as `$1` is available only with `--regex`.
 
 ### Examples
 
 ```sh
 gref foo bar src      # Replace 'foo' with 'bar' in src directory
 gref foo              # Search for 'foo' only
+gref '1.2.0'          # Search for literal dots, not regex wildcards
+gref -r 'foo.*bar'    # Search with a regular expression
 gref -i Foo           # Case-insensitive search for 'Foo'
 gref -e .git,*.log    # Exclude .git folders and .log files
 gref --hidden foo     # Include hidden files in search
@@ -104,9 +109,9 @@ gref --help           # Show help message
 
 ```
 src/
-  main.rs          CLI entry, regex compile, search, model init, app::run()
+  main.rs          CLI entry, pattern compile, search, model init, app::run()
   lib.rs           Public module re-exports (enables integration tests)
-  cli.rs           Manual argument parsing (no clap). Flags: -i, -e, --hidden, --no-ignore
+  cli.rs           Manual argument parsing (no clap). Flags: -i, -r, -e, --hidden, --no-ignore
   model.rs         SearchResult, AppState, AppMode, Model
   search.rs        Pipelined walk + parallel bytes::Regex search, literal prefilter
   replace.rs       Atomic file replacement via temp file + rename
@@ -117,14 +122,15 @@ src/
   filedetect.rs    Text vs binary detection (extension lookup + SIMD null-byte scan)
   gitignore.rs     .gitignore/.ignore/.grefignore parsing, glob→regex, hierarchical merging
 tests/
-  stress_tests.rs  98 edge-case and stress tests across all modules
+  stress_tests.rs  116 edge-case and stress tests across all modules
 ```
 
 ---
 
 ## Performance
 
-- **Whole-buffer regex search**: feeds entire file buffers to `find_iter()` — lets the regex engine's SIMD/Teddy/Aho-Corasick optimizations skip non-matching regions at hardware speed
+- **Literal default, regex opt-in**: user patterns are escaped by default; `--regex` feeds raw regex syntax to the engine
+- **Whole-buffer regex engine**: feeds entire file buffers to `find_iter()` — lets the regex engine's SIMD/Teddy/Aho-Corasick optimizations skip non-matching regions at hardware speed
 - **SIMD literal pre-filtering**: `memchr::memmem::Finder` rejects files that lack a literal substring before engaging the regex engine
 - **Pipelined parallel search**: file walker dispatches jobs immediately via channel; worker threads start searching as files are discovered
 - **Zero-copy path filtering**: OsStr-based hidden/skip/gitignore checks run before `entry.path()` allocates the full PathBuf
@@ -140,7 +146,7 @@ tests/
 ```sh
 cargo build                    # Dev build
 cargo build --release          # Release (strip=true, lto=true, opt-level=3)
-cargo test                     # 41 unit + 98 stress/edge-case tests
+cargo test                     # 54 unit + 116 stress/edge-case tests
 cargo clippy                   # Must pass with 0 warnings
 ```
 

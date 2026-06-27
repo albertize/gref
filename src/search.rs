@@ -14,6 +14,29 @@ use crate::filedetect;
 use crate::gitignore::{self, GitIgnore};
 use crate::model::SearchResult;
 
+/// Compile the user search pattern.
+///
+/// By default, gref treats the pattern as literal text. Regex syntax is enabled
+/// only when `regex_mode` is true.
+pub fn compile_search_pattern(
+    pattern: &str,
+    ignore_case: bool,
+    regex_mode: bool,
+) -> Result<Regex, String> {
+    let searchable_pattern = if regex_mode {
+        pattern.to_string()
+    } else {
+        regex::escape(pattern)
+    };
+    let pattern_str = if ignore_case {
+        format!("(?i){}", searchable_pattern)
+    } else {
+        searchable_pattern
+    };
+
+    Regex::new(&pattern_str).map_err(|e| format!("regex compile error: {}", e))
+}
+
 /// Extract the longest literal substring from a regex for fast pre-filtering.
 /// Returns `Some(literal)` if the longest run is >= 3 characters, else `None`.
 pub fn extract_longest_literal(regex_str: &str) -> Option<String> {
