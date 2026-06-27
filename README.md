@@ -31,21 +31,21 @@ A fast, interactive search and replace tool for your terminal — built for spee
 ### Install script
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/master/install.sh | sh
 ```
 
 Install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --version v2.2.0
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/master/install.sh | sh -s -- --version v2.2.0
 ```
 
 Useful options:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --no-vim
-curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --vim-pack
-curl -fsSL https://raw.githubusercontent.com/albertize/gref/main/install.sh | sh -s -- --prefix /usr/local
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/master/install.sh | sh -s -- --no-vim
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/master/install.sh | sh -s -- --vim-pack
+curl -fsSL https://raw.githubusercontent.com/albertize/gref/master/install.sh | sh -s -- --prefix /usr/local
 ```
 
 The installer downloads the matching release asset, verifies it with `SHA256SUMS`, installs `gref`, and installs the Vim runtime by default. Default user-local paths are `~/.local/bin/gref` and `~/.vim/`.
@@ -53,7 +53,7 @@ The installer downloads the matching release asset, verifies it with `SHA256SUMS
 Inspectable install:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/albertize/gref/main/install.sh
+curl -fsSLO https://raw.githubusercontent.com/albertize/gref/master/install.sh
 less install.sh
 sh install.sh
 ```
@@ -61,7 +61,7 @@ sh install.sh
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/albertize/gref/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/albertize/gref/master/install.ps1 | iex
 ```
 
 ### Download release archives
