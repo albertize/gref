@@ -19,6 +19,7 @@ Usage:
 
 Options:
   -h, --help          Show this help message and exit
+  -v, --version       Show version information and exit
   -i, --ignore-case   Ignore case in pattern matching
   -r, --regex         Treat <pattern> as a regular expression (default: literal text)
   -e, --exclude       Exclude path, file or extension (comma separated, e.g. ".git,*.log,media/")
@@ -35,9 +36,15 @@ Examples:
   gref foo              Search for 'foo' only
   gref -r 'foo.*bar'    Search with a regular expression
   gref -i Foo           Search for 'Foo' (case-insensitive)
+  gref --version        Show version information
   gref --help           Show help message
   gref -e .git,*.log    Exclude .git folders and .log files
 "#;
+
+/// Return the package version display string.
+pub fn version_text() -> String {
+    format!("gref {}", env!("CARGO_PKG_VERSION"))
+}
 
 /// Parse command-line arguments from `std::env::args()`.
 pub fn parse() -> CliArgs {
@@ -60,6 +67,10 @@ pub fn parse_from(raw: &[String]) -> CliArgs {
         let arg = &raw[i];
         match arg.as_str() {
             "-h" | "--help" => show_help = true,
+            "-v" | "--version" => {
+                println!("{}", version_text());
+                std::process::exit(0);
+            }
             "-i" | "--ignore-case" => ignore_case = true,
             "-r" | "--regex" => regex = true,
             "--hidden" => hidden = true,
@@ -195,5 +206,13 @@ mod tests {
         let cli = parse_from(&args);
         assert!(cli.regex);
         assert_eq!(cli.pattern, "foo.*bar");
+    }
+
+    #[test]
+    fn test_version_text_uses_package_version() {
+        assert_eq!(
+            version_text(),
+            format!("gref {}", env!("CARGO_PKG_VERSION"))
+        );
     }
 }

@@ -9,7 +9,7 @@ A single-binary terminal TUI for search-and-replace across directory trees. Sear
 ```
 main.rs          → CLI parse, pattern compile, search, model init, app::run()
 lib.rs           → pub mod re-exports (enables integration tests)
-cli.rs           → Manual arg parsing (no clap). CliArgs struct. Flags: -i, -r/--regex, -e, --hidden, --no-ignore.
+cli.rs           → Manual arg parsing (no clap). CliArgs struct. Flags: -v/--version, -i, -r/--regex, -e, --hidden, --no-ignore.
 model.rs         → SearchResult { file_path, line_num, line_text }, AppState, AppMode, Model
 search.rs        → Pipelined file walking + parallel bytes::Regex search, literal prefilter, hidden/gitignore skipping
 replace.rs       → Atomic file replacement via temp file + rename
@@ -48,7 +48,7 @@ gitignore.rs     → .gitignore/.ignore/.grefignore parsing (glob→regex), hier
 ```bash
 cargo build                    # dev build
 cargo build --release          # release (strip=true, lto=true, opt-level=3)
-cargo test                     # 54 unit + 116 stress/edge-case tests
+cargo test                     # 55 unit + 117 stress/edge-case tests
 cargo clippy                   # must pass with 0 warnings
 ```
 

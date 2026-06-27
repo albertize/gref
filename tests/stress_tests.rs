@@ -7,6 +7,7 @@ mod stress_tests {
     use std::collections::HashSet;
     use std::fs;
     use std::path::Path;
+    use std::process::Command;
 
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
@@ -124,6 +125,21 @@ mod stress_tests {
         assert_eq!(cli.exclude, vec![".git"]);
         assert_eq!(cli.pattern, "pattern");
         assert_eq!(cli.replacement, Some("replacement".into()));
+    }
+
+    #[test]
+    fn cli_version_flag_prints_package_version() {
+        let output = Command::new(env!("CARGO_BIN_EXE_gref"))
+            .arg("--version")
+            .output()
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("gref {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(output.stderr.is_empty());
     }
 
     // =====================================================================

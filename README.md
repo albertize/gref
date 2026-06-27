@@ -10,16 +10,16 @@ A fast, interactive search and replace tool for your terminal — built for spee
 
 ## Features
 
-- 🚀 **Buffered search engine**: literal-by-default search on top of whole-buffer regex matching with SIMD-accelerated literal pre-filtering (`memchr::memmem`)
-- 🖥️ **Interactive TUI** for previewing and selecting replacements
-- 🧠 **Smart selection**: choose lines to replace, bulk select/deselect
-- 🛡️ **Atomic file writes** for safe replacements (temp file + rename)
-- 🎨 **Flicker-free rendering** via cursor-home + line-level clearing
-- 🏃 **Tiny binary**: only `regex` + `memchr` (transitive), release builds with LTO and strip
-- 🔤 **UTF-8 safe**: proper char-boundary handling for multi-byte content
-- 📁 **Project level filtering**: `.gitignore`, `.ignore`, `.grefignore` support with hierarchical merging
-- 👻 **Hidden file skipping**: dot-prefix (Unix) and `FILE_ATTRIBUTE_HIDDEN` (Windows)
-- 🔍 **Smart binary detection**: known extensions via lookup, unknown extensions via SIMD null-byte scan on already-loaded buffer
+-  **Buffered search engine**: literal-by-default search on top of whole-buffer regex matching with SIMD-accelerated literal pre-filtering (`memchr::memmem`)
+-  **Interactive TUI** for previewing and selecting replacements
+-  **Smart selection**: choose lines to replace, bulk select/deselect
+-  **Atomic file writes** for safe replacements (temp file + rename)
+-  **Flicker-free rendering** via cursor-home + line-level clearing
+-  **Tiny binary**: only `regex` + `memchr` (transitive), release builds with LTO and strip
+-  **UTF-8 safe**: proper char-boundary handling for multi-byte content
+-  **Project level filtering**: `.gitignore`, `.ignore`, `.grefignore` support with hierarchical merging
+-  **Hidden file skipping**: dot-prefix (Unix) and `FILE_ATTRIBUTE_HIDDEN` (Windows)
+-  **Smart binary detection**: known extensions via lookup, unknown extensions via SIMD null-byte scan on already-loaded buffer
 
 ---
 
@@ -59,6 +59,7 @@ gref [options] <pattern> [replacement] [directory]
 ### Options
 
 - `-h`, `--help` : Show help message and exit
+- `-v`, `--version` : Show version information and exit
 - `-i`, `--ignore-case` : Ignore case in pattern matching
 - `-r`, `--regex` : Treat `<pattern>` as a regular expression (default: literal text)
 - `-e`, `--exclude` : Exclude path, file or extension (comma separated, e.g. `.git,*.log,media/`)
@@ -81,6 +82,7 @@ gref foo              # Search for 'foo' only
 gref '1.2.0'          # Search for literal dots, not regex wildcards
 gref -r 'foo.*bar'    # Search with a regular expression
 gref -i Foo           # Case-insensitive search for 'Foo'
+gref --version        # Show version information
 gref -e .git,*.log    # Exclude .git folders and .log files
 gref --hidden foo     # Include hidden files in search
 gref --no-ignore foo  # Ignore .gitignore rules
@@ -111,7 +113,7 @@ gref --help           # Show help message
 src/
   main.rs          CLI entry, pattern compile, search, model init, app::run()
   lib.rs           Public module re-exports (enables integration tests)
-  cli.rs           Manual argument parsing (no clap). Flags: -i, -r, -e, --hidden, --no-ignore
+  cli.rs           Manual argument parsing (no clap). Flags: -v, -i, -r, -e, --hidden, --no-ignore
   model.rs         SearchResult, AppState, AppMode, Model
   search.rs        Pipelined walk + parallel bytes::Regex search, literal prefilter
   replace.rs       Atomic file replacement via temp file + rename
@@ -122,7 +124,7 @@ src/
   filedetect.rs    Text vs binary detection (extension lookup + SIMD null-byte scan)
   gitignore.rs     .gitignore/.ignore/.grefignore parsing, glob→regex, hierarchical merging
 tests/
-  stress_tests.rs  116 edge-case and stress tests across all modules
+  stress_tests.rs  117 edge-case and stress tests across all modules
 ```
 
 ---
@@ -146,7 +148,7 @@ tests/
 ```sh
 cargo build                    # Dev build
 cargo build --release          # Release (strip=true, lto=true, opt-level=3)
-cargo test                     # 54 unit + 116 stress/edge-case tests
+cargo test                     # 55 unit + 117 stress/edge-case tests
 cargo clippy                   # Must pass with 0 warnings
 ```
 
