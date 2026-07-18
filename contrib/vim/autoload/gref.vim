@@ -255,6 +255,14 @@ function! s:ClosePopup(winid) abort
   endif
 endfunction
 
+function! s:RedrawAfterPopupClose(timer) abort
+  silent! redraw!
+endfunction
+
+function! s:ScheduleRedraw() abort
+  call timer_start(10, function('s:RedrawAfterPopupClose'))
+endfunction
+
 function! s:ReadResult(result_file) abort
   if !filereadable(a:result_file)
     return {'status': 'missing'}
@@ -319,39 +327,44 @@ function! s:OpenResult(result_file, return_winid, popup_winid, attempt, timer) a
       call timer_start(25, function('s:OpenResult', [a:result_file, a:return_winid, a:popup_winid, a:attempt + 1]))
     else
       echoerr 'Gref could not return focus to the original Vim window'
+      call s:ScheduleRedraw()
     endif
     return
   endif
 
-  let result = s:ReadResult(a:result_file)
-  if result.status ==# 'missing' || result.status ==# 'cancelled'
-    return
-  endif
-  if result.status ==# 'none'
-    echo 'Gref: no results'
-    return
-  endif
-  if result.status ==# 'error'
-    echoerr get(result, 'message', 'Gref failed')
-    return
-  endif
-  if result.status !=# 'selected'
-    return
-  endif
+  try
+    let result = s:ReadResult(a:result_file)
+    if result.status ==# 'missing' || result.status ==# 'cancelled'
+      return
+    endif
+    if result.status ==# 'none'
+      echo 'Gref: no results'
+      return
+    endif
+    if result.status ==# 'error'
+      echoerr get(result, 'message', 'Gref failed')
+      return
+    endif
+    if result.status !=# 'selected'
+      return
+    endif
 
-  let lnum = get(result, 'line', 0)
-  let column = max([1, get(result, 'column', 1)])
-  let path = get(result, 'path', '')
-  if lnum <= 0 || empty(path)
-    return
-  endif
+    let lnum = get(result, 'line', 0)
+    let column = max([1, get(result, 'column', 1)])
+    let path = get(result, 'path', '')
+    if lnum <= 0 || empty(path)
+      return
+    endif
 
-  let command = s:OpenCommand()
-  if empty(command)
-    return
-  endif
-  execute command . ' +' . lnum . ' ' . fnameescape(path)
-  call cursor(lnum, column)
+    let command = s:OpenCommand()
+    if empty(command)
+      return
+    endif
+    execute command . ' +' . lnum . ' ' . fnameescape(path)
+    call cursor(lnum, column)
+  finally
+    call s:ScheduleRedraw()
+  endtry
 endfunction
 
 function! s:AfterReplace(result_file, return_winid, popup_winid, attempt, timer) abort
@@ -361,22 +374,29 @@ function! s:AfterReplace(result_file, return_winid, popup_winid, attempt, timer)
       call timer_start(25, function('s:AfterReplace', [a:result_file, a:return_winid, a:popup_winid, a:attempt + 1]))
     else
       echoerr 'Gref could not return focus to the original Vim window'
+      call s:ScheduleRedraw()
     endif
     return
   endif
-  let result = s:ReadResult(a:result_file)
-  if result.status ==# 'error'
-    echoerr get(result, 'message', 'Gref failed')
-  elseif result.status ==# 'none'
-    echo 'Gref: no results'
-  elseif result.status ==# 'replaced'
-    silent! checktime
-  endif
+  try
+    let result = s:ReadResult(a:result_file)
+    if result.status ==# 'error'
+      echoerr get(result, 'message', 'Gref failed')
+    elseif result.status ==# 'none'
+      echo 'Gref: no results'
+    elseif result.status ==# 'replaced'
+      silent! checktime
+    endif
+  finally
+    call s:ScheduleRedraw()
+  endtry
 endfunction
 
 function! s:OnExit(result_file, is_replace, return_winid, ctx, job, status) abort
   let a:ctx.done = 1
   let popup_winid = get(a:ctx, 'popup', 0)
+  silent! stopinsert
+  call feedkeys("\<Esc>", 'in')
   call s:ClosePopup(popup_winid)
   if a:is_replace
     call timer_start(25, function('s:AfterReplace', [a:result_file, a:return_winid, popup_winid, 0]))
